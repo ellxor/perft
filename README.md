@@ -28,3 +28,4 @@ position 6                     1450 Mnps
 - Compile the `src/unity_build.cc` file for a fast [unity build](https://en.wikipedia.org/wiki/Unity_build).
 - Add some performance flags, e.g. `-O3 -flto -fno-exceptions -fno-rtti -march=native -Wl,-O1`.
 - For some extra performance, do a PGO (profile-guided-optimisation) build using the `-fprofile-generate`/`-fprofile-use` flags and the command `llvm-profdata merge *.profraw -o default.profdata`.
+- *Note:* when doing a PGO for the threaded perft, enable the `-DPROFILE` flag to speed up profiling.
