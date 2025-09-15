@@ -13,9 +13,6 @@
 #include "fen.cc"
 
 
-//  Unit-testing structure containing an FEN, and the (maximum) depth, as well as a list of expected
-//  perft results at a given depth
-
 typedef unsigned Depth;
 typedef uint64_t Nodes;
 
