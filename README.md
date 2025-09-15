@@ -2,6 +2,17 @@
 
 This is a [perft](https://www.chessprogramming.org/Perft) program using a custom move generator and a unique board state using only 4 bitboards. It currently achieves an average of 1.38 Gnps across [a set of 6 positions](https://www.chessprogramming.org/Perft_Results).
 
+**Results:**
+```
+startpos                        888 Mnps
+kiwipete                       1710 Mnps
+position 3                      720 Mnps
+position 4                     1588 Mnps
+position 4 (rotated)           1579 Mnps
+position 5                     1514 Mnps
+position 6                     1450 Mnps
+```
+
 **Build Instructions**
 
 - Only a C++ compiler is needed to build (`clang` seems to be most optimal)
