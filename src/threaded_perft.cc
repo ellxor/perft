@@ -58,6 +58,9 @@ int start_perft_thread(void* opaque_thread_info)
 
 Nodes threaded_perft(Board& board, Depth depth)
 {
+        // FIXME: implement a much better scheduler taking into account the number
+        //        of cores / threads available.
+
         thrd_t threads[MaximumLegalMoves];
         PerftThreadInfo thread_info[MaximumLegalMoves];
 
