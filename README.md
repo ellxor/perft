@@ -1,8 +1,17 @@
 ### Perft
 
-This is a [perft](https://www.chessprogramming.org/Perft) program using a custom move generator and a unique board state using only 4 bitboards. It currently achieves an average of 1.38 Gnps across [a set of 6 positions](https://www.chessprogramming.org/Perft_Results).
+This is a [perft](https://www.chessprogramming.org/Perft) program using a custom move generator and a unique board state using only 4 bitboards. It currently achieves an average of 1.38 billion nodes per second across [a set of 6 positions](https://www.chessprogramming.org/Perft_Results) in single-threaded mode, and 8.83 billion nodes per second on Kiwipete on my 6 core (12 thread) 3.9 GHz machine.
 
-**Results:**
+
+**Multi-threaded Results:**
+```
+Running multi-threaded Kiwipete perft on 12 cores.
+Depth: 6, Nodes: 8031647685  (8.826 Gnps)
+```
+
+Using the compressed board structure size of 32 bytes, this is the equivalent of producing ~280 GB/s of legal chess positons!
+
+**Single-threaded Results:**
 ```
 startpos                        888 Mnps
 kiwipete                       1710 Mnps
