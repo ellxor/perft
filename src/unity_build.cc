@@ -1,4 +1,4 @@
 // Unity build
 #include "magic.cc"
 #include "movegen.cc"
-#include "perft.cc"
+#include "threaded_perft.cc"
