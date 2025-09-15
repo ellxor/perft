@@ -111,7 +111,7 @@ BitBoard generic_attacks(PieceType piece, Square sq, BitBoard occ)
                 case Bishop: return BishopMagics[sq].attacks(occ);
                 case Rook:   return RookMagics[sq].attacks(occ);
                 case Queen:  return BishopMagics[sq].attacks(occ)
-                                | RookMagics[sq].attacks(occ);
+                                  | RookMagics[sq].attacks(occ);
                 default: __builtin_unreachable();
         }
 }
