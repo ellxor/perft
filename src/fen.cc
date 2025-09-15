@@ -24,7 +24,7 @@ struct Board parse_fen(const char *fen_string, bool *white_to_move, bool *ok)
         piece_lookup['q'] = Queen;
         piece_lookup['k'] = King;
 
-        struct Board board = {0};
+        struct Board board = {};
         Square sq = 56, file = 0;
 
 	/* Parse board */
