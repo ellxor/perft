@@ -77,8 +77,8 @@ constexpr size_t NumberOfPerftTests = sizeof(PerftTests) / sizeof (PerftTests[0]
 
 Nodes perft(struct Board& pos, unsigned depth)
 {
+        if (depth == 1) return count_moves(pos);
         auto buffer = generate_moves(pos);
-        if (depth == 1) return buffer.size + popcount(buffer.pawn_pushes);
 
         Nodes total = 0;
 

@@ -348,3 +348,158 @@ Board make_pawn_push(Board board, Square dest)
 
         return board;
 }
+
+
+/*
+ *   For faster perft, at leaf nodes we only have to count the number of legal moves, and don't
+ *   need to contruct the actual moves. This code is mostly a copy of above, but optimised for
+ *   only counting.
+ */
+
+
+uint64_t count_pawn_moves(Board& board, MoveGenerationInfo& info)
+{
+        auto pawns   = board.extract_by_piece(Pawn) & board.our;
+        auto occ     = board.occupied();
+        auto enemy   = occ &~ board.our;
+        auto targets = info.targets;
+
+        // Check for pinned en-passant. Note that this is a special type of pinned piece as two
+        // pieces dissappear in the checking direction. This introduces a slow branch into our pawn
+        // move generation, but it is a necessary evil for full legality, however rare.
+
+        auto candidates = pawns & south(east(info.en_passant) | west(info.en_passant));
+
+        // We optimise this branch by only checking if the king is actually on the 5th rank
+        if ((info.king & 56) == 32 && popcount(candidates) == 1) {
+                BitBoard pinners = (board.extract_by_piece(Rook) | board.extract_by_piece(Queen)) &~ board.our;
+                BitBoard clear = candidates | south(info.en_passant);
+
+                // If the pawn is "double" pinned, then en-passant is no longer possible
+                if (RookMagics[info.king].attacks( (occ | info.en_passant) &~ clear) & pinners)
+                        info.en_passant = 0;
+        }
+
+        // enable en-passant if the pawn being captured was giving check
+        targets |= info.en_passant & north(info.targets);
+        enemy   |= info.en_passant;
+
+        auto pinned = info.hpinned | info.vpinned;
+        auto normal_pawns = pawns &~ pinned;
+        auto pinned_pawns = pawns & pinned;
+
+        auto file = file_of(info.king); // only pinned pawns on same file as king can move forward
+        auto forward = normal_pawns | (pinned_pawns & file);
+
+        auto single_move = north(forward) &~ occ;
+        auto double_move = north(single_move & Rank3BB) &~ occ;
+
+        auto east_capture = north(east(normal_pawns)) & enemy;
+        auto west_capture = north(west(normal_pawns)) & enemy;
+
+        auto pinned_east_capture = north(east(pawns & info.vpinned)) & enemy & info.vpinned;
+        auto pinned_west_capture = north(west(pawns & info.vpinned)) & enemy & info.vpinned;
+
+        single_move  = single_move & targets;
+        double_move  = double_move & targets;
+        east_capture = (east_capture | pinned_east_capture) & targets;
+        west_capture = (west_capture | pinned_west_capture) & targets;
+
+        uint64_t count = popcount( (single_move &~ Rank8BB) | double_move );
+
+        // promotions, note: double moves cannot promote
+        count += 4 * popcount(single_move  & Rank8BB);
+        count += 4 * popcount(east_capture & Rank8BB);
+        count += 4 * popcount(west_capture & Rank8BB);
+
+        count += popcount(east_capture &~ Rank8BB);
+        count += popcount(west_capture &~ Rank8BB);
+
+        return count;
+}
+
+
+uint64_t count_piece_moves(Board& board, MoveGenerationInfo& info, PieceType piece, bool pinned)
+{
+        auto _pinned = info.hpinned | info.vpinned;
+        if (pinned) _pinned = (piece == Bishop) ? info.vpinned : info.hpinned;
+
+        auto occ    = board.occupied();
+        auto pieces = board.extract_by_piece(piece);
+        auto queens = board.extract_by_piece(Queen);
+        if (pinned) pieces |= queens;
+
+        pieces &= board.our & (pinned ? _pinned : ~_pinned);
+        uint64_t count = 0;
+
+        for (; bits(pieces)) {
+                auto init = trailing_zeros(pieces);
+                auto attacks = generic_attacks(piece, init, occ) & info.targets;
+
+                // If the piece is pinned, then the moves must remain aligned to the king.
+                if (pinned) attacks &= _pinned;
+                count += popcount(attacks);
+        }
+
+        return count;
+}
+
+
+uint64_t count_king_moves(Board& board, MoveGenerationInfo& info)
+{
+        BitBoard occ = board.occupied();
+        BitBoard attacks = KingAttacks[info.king] &~ (info.attacked | (board.our & occ));
+
+        uint64_t count = popcount(attacks);
+
+        auto castling = board.extract_by_piece(Castle)
+                & RookMagics[info.king].attacks(occ);
+
+// Special BitBoards to check castling against. The OCC BitBoards must not be occupied, and
+// the ATT BitBoards must not be attacked, as castling out-of, through or into check is not
+// allowed.
+
+#define QATT  (1 << C1 | 1 << D1 | 1 << E1)
+#define KATT  (1 << E1 | 1 << F1 | 1 << G1)
+
+        if (castling & (1 << A1) && !(info.attacked & QATT))  ++count;
+        if (castling & (1 << H1) && !(info.attacked & KATT))  ++count;
+
+        return count;
+}
+
+
+uint64_t count_moves(Board& board)
+{
+        MoveGenerationInfo info = {};
+
+        info.king = trailing_zeros(board.extract_by_piece(King) & board.our);
+        BitBoard checks = 0;
+
+        info.en_passant = board.our &~ board.occupied();
+        info.targets = ~(board.occupied() & board.our); // cannot capture own pieces
+        info.attacked = enemy_attacked(board, &checks);
+        generate_pinned(board, &info, &checks);
+
+        // If we are in check from more than one piece, then we can only move king otherwise
+        // we must block the check, or capture the checking piece
+        uint64_t count = count_king_moves(board, info);
+
+        if (popcount(checks) == 2) return count;
+        if (checks) info.targets &= LineBetween[info.king][trailing_zeros(checks)];
+
+        // Generate moves of pinned pieces, note: pinned Knights can never move
+        if ((info.hpinned | info.vpinned) & board.our) {
+                count += count_piece_moves(board, info, Rook,   true);
+                count += count_piece_moves(board, info, Bishop, true);
+        }
+
+        // Generate regular moves for non-pinned pieces
+        count += count_pawn_moves (board, info);
+        count += count_piece_moves(board, info, Knight, false);
+        count += count_piece_moves(board, info, Bishop, false);
+        count += count_piece_moves(board, info, Rook,   false);
+        count += count_piece_moves(board, info, Queen,  false);
+
+        return count;
+}
