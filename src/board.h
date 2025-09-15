@@ -50,8 +50,8 @@ struct Board {
                 // function is inlined and always called with a constexpr piecetype, it
                 // will be folded by the compiler into a couple bitwise instructions.
                 return ((piece & 0b001) ? x : ~x)
-                & ((piece & 0b010) ? y : ~y)
-                & ((piece & 0b100) ? z : ~z);
+                     & ((piece & 0b010) ? y : ~y)
+                     & ((piece & 0b100) ? z : ~z);
         }
 };
 
