@@ -1,6 +1,6 @@
 ### Perft
 
-This is a [perft](https://www.chessprogramming.org/Perft) program using a custom move generator and a unique board state using only 4 bitboards. It currently achieves an average of 650 Mnps across [a set of 6 positions](https://www.chessprogramming.org/Perft_Results).
+This is a [perft](https://www.chessprogramming.org/Perft) program using a custom move generator and a unique board state using only 4 bitboards. It currently achieves an average of 1.38 Gnps across [a set of 6 positions](https://www.chessprogramming.org/Perft_Results).
 
 **Build Instructions**
 
