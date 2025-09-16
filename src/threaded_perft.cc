@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <time.h>
@@ -12,18 +13,30 @@
 // Embed FEN parsing code
 #include "fen.cc"
 
+#define atomic _Atomic
+
 
 typedef unsigned Depth;
 typedef uint64_t Nodes;
+typedef double Seconds;
 
 
 struct PerftThreadInfo {
-        Board* board_buffer;
-        size_t buffer_size;
+        Board*          board_buffer;
+        size_t          buffer_size;
+        atomic(size_t)  buffer_done;
 
-        Depth  depth;
-        Nodes  result;
+        Depth           depth;
+        atomic(Nodes)   result;
 };
+
+
+double get_time_from_os() {
+        timespec timestamp;
+        clock_gettime(CLOCK_REALTIME, &timestamp);
+
+        return timestamp.tv_sec + 1.0e-9 * timestamp.tv_nsec;
+}
 
 
 Nodes perft(Board& pos, unsigned depth)
@@ -50,13 +63,24 @@ Nodes perft(Board& pos, unsigned depth)
 int start_perft_thread(void* opaque_thread_info)
 {
         assert(opaque_thread_info != nullptr);
-
         auto& thread_info = *(PerftThreadInfo*) opaque_thread_info;
 
-        for (size_t i = 0; i < thread_info.buffer_size; ++i) {
-                thread_info.result += perft(thread_info.board_buffer[i], thread_info.depth);
+        auto t1 = get_time_from_os();
+
+        while (true) {
+                size_t index = atomic_fetch_add(&thread_info.buffer_done, 1);
+                if (index >= thread_info.buffer_size) break;
+
+                auto& position = thread_info.board_buffer[index];
+
+                Nodes nodes = perft(position, thread_info.depth);
+                atomic_fetch_add(&thread_info.result, nodes);
         }
 
+        auto t2 = get_time_from_os();
+        auto seconds = t2 - t1;
+
+        printf("Thread finished in %.3f seconds (%.3f Gnps).\n", t2 - t1, thread_info.result / seconds / 1.0e9);
         return 0;
 }
 
@@ -95,53 +119,34 @@ Nodes threaded_perft(Board& board, Depth depth, unsigned number_of_threads)
         size_t position_pool_size = 0;
 
         populate_position_pool(board, POPULATION_DEPTH, position_pool, position_pool_size);
-
         thrd_t threads[MAX_THREAD_COUNT];
-        PerftThreadInfo thread_info[MAX_THREAD_COUNT];
 
-        auto positions_per_thread = position_pool_size / number_of_threads;
+        PerftThreadInfo info = {
+                .board_buffer = position_pool,
+                .buffer_size = position_pool_size,
+                .depth = depth - POPULATION_DEPTH,
+        };
+
+        atomic_init(&info.buffer_done, 0);
+        atomic_init(&info.result, 0);
 
         for (unsigned i = 0; i < number_of_threads; ++i) {
-                auto begin = i * positions_per_thread;
-                auto end = begin + positions_per_thread;
-
-                if (i == number_of_threads - 1) {
-                        end = position_pool_size;
-                }
-
-                thread_info[i] = {
-                        .board_buffer = position_pool + begin,
-                        .buffer_size  = end - begin,
-                        .depth = depth - POPULATION_DEPTH,
-                        .result = 0,
-                };
-
-                thrd_create(&threads[i], start_perft_thread, &thread_info[i]);
+                thrd_create(&threads[i], start_perft_thread, &info);
         }
-
-        Nodes total = 0;
 
         for (unsigned i = 0; i < number_of_threads; ++i) {
                 thrd_join(threads[i], nullptr);
-                total += thread_info[i].result;
         }
 
-        return total;
+        return info.result;
 }
 
-
-double get_time_from_os() {
-        timespec timestamp;
-        clock_gettime(CLOCK_REALTIME, &timestamp);
-
-        return timestamp.tv_sec + 1.0e-9 * timestamp.tv_nsec;
-}
 
 
 int main()
 {
         auto cpu_core_count = sysconf(_SC_NPROCESSORS_ONLN);
-        printf("Running multi-threaded Kiwipete perft on %ld cores.\n", cpu_core_count);
+        printf("Running multi-threaded Kiwipete perft on %ld threads.\n", cpu_core_count);
 
         init_bitboard_tables();
 
@@ -155,15 +160,13 @@ int main()
         Depth depth = 7;
 
 #ifdef PROFILE
-        depth = 5;
+        depth -= 2;
 #endif
 
-        // For some reason 32 threads works better than the cpu_core_count?
-
         auto t1 = get_time_from_os();
-        auto nodes = threaded_perft(board, depth, 32);
+        auto nodes = threaded_perft(board, depth, cpu_core_count);
         auto t2 = get_time_from_os();
 
         auto nps = nodes / (t2 - t1);
-        printf("Depth: %u, Nodes: %ld  (%.3f Gnps)\n", depth, nodes, nps / 1.0e9);
+        printf("Depth: %u, Nodes: %lu  (%.3f Gnps)\n", depth, nodes, nps / 1.0e9);
 }
