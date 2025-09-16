@@ -1,5 +1,5 @@
 #include <assert.h>
-#include <stdatomic.h>
+#include <atomic>
 #include <stdio.h>
 #include <stdint.h>
 #include <time.h>
@@ -13,8 +13,7 @@
 // Embed FEN parsing code
 #include "fen.cc"
 
-#define atomic _Atomic
-
+#define atomic(T) std::atomic<T>
 
 typedef unsigned Depth;
 typedef uint64_t Nodes;
@@ -142,7 +141,6 @@ Nodes threaded_perft(Board& board, Depth depth, unsigned number_of_threads)
 }
 
 
-
 int main()
 {
         auto cpu_core_count = sysconf(_SC_NPROCESSORS_ONLN);
@@ -160,7 +158,7 @@ int main()
         Depth depth = 7;
 
 #ifdef PROFILE
-        depth -= 2;
+        depth = 5;
 #endif
 
         auto t1 = get_time_from_os();
