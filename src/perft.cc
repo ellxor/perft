@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <time.h>
+#include <threads.h>
+#include <unistd.h>
 
 #include "board.h"
 #include "magic.h"
@@ -10,13 +12,27 @@
 // Embed FEN parsing code
 #include "fen.cc"
 
+#include <atomic>
+#define atomic(T) std::atomic<T>
 
-//  Unit-testing structure containing an FEN, and the (maximum) depth, as well as a list of expected
-//  perft results at a given depth
 
 typedef unsigned Depth;
 typedef uint64_t Nodes;
+typedef double Seconds;
 
+
+struct PerftThreadInfo {
+        Board*          board_buffer;
+        size_t          buffer_size;
+        atomic(size_t)  buffer_done;
+
+        Depth           depth;
+        atomic(Nodes)   result;
+};
+
+
+//  Unit-testing structure containing an FEN, and the (maximum) depth, as well as a list of expected
+//  perft results at a given depth
 
 struct PerftTest {
         char const* name;
@@ -24,6 +40,7 @@ struct PerftTest {
         Depth       depth;
         Nodes       expected[7];
 };
+
 
 
 // Unit-test results we obtained from (https://www.chessprogramming.org/Perft_Results)
@@ -75,6 +92,14 @@ const PerftTest PerftTests[] =
 constexpr size_t NumberOfPerftTests = sizeof(PerftTests) / sizeof (PerftTests[0]);
 
 
+double get_time_from_os() {
+        timespec timestamp;
+        clock_gettime(CLOCK_REALTIME, &timestamp);
+
+        return timestamp.tv_sec + 1.0e-9 * timestamp.tv_nsec;
+}
+
+
 Nodes perft(Board& pos, Depth depth)
 {
         if (depth == 1) return count_moves(pos);
@@ -96,11 +121,94 @@ Nodes perft(Board& pos, Depth depth)
 }
 
 
+// Multi-threaded perft implementation. First a shallow depth 2 perft is done to create a position
+// pool, which is then consumed by $(number of cpu cores) threads.
+
+
+int start_perft_thread(void* opaque_thread_info)
+{
+        assert(opaque_thread_info != nullptr);
+        auto& thread_info = *(PerftThreadInfo*) opaque_thread_info;
+
+        while (true) {
+                size_t index = atomic_fetch_add(&thread_info.buffer_done, 1);
+                if (index >= thread_info.buffer_size) break;
+
+                auto& position = thread_info.board_buffer[index];
+
+                Nodes nodes = perft(position, thread_info.depth);
+                atomic_fetch_add(&thread_info.result, nodes);
+        }
+
+        return 0;
+}
+
+
+void populate_position_pool(Board& board, Depth depth, Board position_pool[], size_t& position_pool_size)
+{
+        if (depth == 0) {
+                position_pool[position_pool_size++] = board;
+                return;
+        }
+
+        auto buffer = generate_moves(board);
+
+        for (size_t i = 0; i < buffer.size; ++i) {
+                auto child = make_move(board, buffer.moves[i]);
+                populate_position_pool(child, depth - 1, position_pool, position_pool_size);
+        }
+
+        for (; bits(buffer.pawn_pushes)) {
+                auto child = make_pawn_push(board, trailing_zeros(buffer.pawn_pushes));
+                populate_position_pool(child, depth - 1, position_pool, position_pool_size);
+        }
+}
+
+
+Nodes threaded_perft(Board& board, Depth depth, size_t number_of_threads)
+{
+        constexpr size_t MAX_THREAD_COUNT = 32;
+        constexpr Depth POPULATION_DEPTH = 2;
+
+        assert(depth > POPULATION_DEPTH);
+        assert(number_of_threads > 0);
+        assert(number_of_threads <= MAX_THREAD_COUNT);
+
+        Board position_pool[1 << 14];
+        size_t position_pool_size = 0;
+
+        populate_position_pool(board, POPULATION_DEPTH, position_pool, position_pool_size);
+        thrd_t threads[MAX_THREAD_COUNT];
+
+        PerftThreadInfo info = {
+                .board_buffer = position_pool,
+                .buffer_size = position_pool_size,
+                .depth = depth - POPULATION_DEPTH,
+        };
+
+        atomic_init(&info.buffer_done, 0);
+        atomic_init(&info.result, 0);
+
+        for (size_t i = 0; i < number_of_threads; ++i) {
+                thrd_create(&threads[i], start_perft_thread, &info);
+        }
+
+        for (size_t i = 0; i < number_of_threads; ++i) {
+                thrd_join(threads[i], nullptr);
+        }
+
+        return info.result;
+}
+
+
 int main()
 {
+        auto cpu_core_count = sysconf(_SC_NPROCESSORS_ONLN);
+        printf("Running multi-threaded perft on %ld threads.\n", cpu_core_count);
+
         init_bitboard_tables();
 
-        clock_t ticks = 0;
+        Seconds total_time = 0.0;
         uint64_t total_nodes = 0;
 
         printf("name                      depth       nodes    \n");
@@ -114,22 +222,19 @@ int main()
                 auto board = parse_fen(test.FEN, &white_to_move, &ok);
                 assert(ok && "FEN parsing failed!");
 
-                auto t1 = clock();
-                auto nodes = perft(board, test.depth);
-                auto t2 = clock();
+                auto t1 = get_time_from_os();
+                auto nodes = threaded_perft(board, test.depth, cpu_core_count);
+                auto t2 = get_time_from_os();
+
+                auto expected = test.expected[test.depth - 1];
+                assert(nodes == expected && "TEST FAILED!");
+
+                auto seconds = t2 - t1;
+                printf("%-25s %-5u       %9zu\t\t(%6.3f Gnps)\n", test.name, test.depth, nodes, nodes / seconds / 1.0e9);
 
                 total_nodes += nodes;
-                ticks += t2 - t1;
-
-                printf("%-25s %-5u       %9zu\t\t(%lu mnps)\n", test.name, test.depth, nodes, nodes * CLOCKS_PER_SEC / ((t2 - t1) * 1000000));
-
-                auto expected = test.expected[test.depth-1];
-                assert(nodes == expected && "TEST FAILED!");
+                total_time += seconds;
         }
 
-        // Calculate time for printing out benchmark
-        double tick_seconds = 1.0 / CLOCKS_PER_SEC;
-        double seconds = ticks * tick_seconds;
-
-        printf("\nNodes per second: %'d\n", (int)(total_nodes / seconds));
+        printf("\nAverage nodes per second: %1.3f Gnps\n", total_nodes / total_time / 1.0e9);
 }
