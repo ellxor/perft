@@ -12,7 +12,7 @@ struct Magic {
         }
 };
 
-extern BitBoard KnightAttacks[64];
+extern BitBoard KnightAttacks[64+1]; // extra slot for loop unrolling
 extern BitBoard KingAttacks[64];
 extern BitBoard LineBetween[64][64];
 

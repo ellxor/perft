@@ -6,7 +6,7 @@ typedef int DiagonalIndex;
 
 constexpr size_t SlidingAttacksTableSize = 107648;
 
-BitBoard KnightAttacks[64];
+BitBoard KnightAttacks[64+1];
 BitBoard KingAttacks[64];
 BitBoard SlidingAttacks[107648];
 BitBoard LineBetween[64][64];
