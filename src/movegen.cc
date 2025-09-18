@@ -10,8 +10,8 @@
 struct MoveGenerationInfo {
         BitBoard attacked;
         BitBoard targets;
-        BitBoard hpinned;
-        BitBoard vpinned;
+        BitBoard pinned_orthogonally;
+        BitBoard pinned_diagonally;
         Square   king;
 };
 
@@ -58,12 +58,12 @@ void generate_pawn_moves(MoveBuffer& buffer, Board& board, MoveGenerationInfo& i
         auto candidates = pawns & south(east(en_passant) | west(en_passant));
 
         // We optimise this branch by only checking if the king is actually on the 5th rank
-        if ((info.king & 56) == 32 && popcount(candidates) == 1) {
-                BitBoard pinners = (board.extract_by_piece(Rook) | board.extract_by_piece(Queen)) &~ board.our;
-                BitBoard clear = candidates | south(en_passant);
+        if (info.king / 8 == 4 && popcount(candidates) == 1) {
+                auto pinners = (board.extract_by_piece(Rook) | board.extract_by_piece(Queen)) &~ board.our;
+                auto clear = candidates | south(en_passant);
 
                 // If the pawn is "double" pinned, then en-passant is no longer possible
-                if (RookMagics[info.king].attacks( (occ | en_passant) &~ clear) & pinners)
+                if (RookMagics[info.king].attacks(occ &~ clear) & pinners)
                         en_passant = 0;
         }
 
@@ -71,7 +71,7 @@ void generate_pawn_moves(MoveBuffer& buffer, Board& board, MoveGenerationInfo& i
         targets |= en_passant & north(info.targets);
         enemy   |= en_passant;
 
-        auto pinned = info.hpinned | info.vpinned;
+        auto pinned = info.pinned_orthogonally | info.pinned_diagonally;
         auto normal_pawns = pawns &~ pinned;
         auto pinned_pawns = pawns & pinned;
 
@@ -84,8 +84,8 @@ void generate_pawn_moves(MoveBuffer& buffer, Board& board, MoveGenerationInfo& i
         auto east_capture = north(east(normal_pawns)) & enemy;
         auto west_capture = north(west(normal_pawns)) & enemy;
 
-        auto pinned_east_capture = north(east(pawns & info.vpinned)) & enemy & info.vpinned;
-        auto pinned_west_capture = north(west(pawns & info.vpinned)) & enemy & info.vpinned;
+        auto pinned_east_capture = north(east(pawns & info.pinned_diagonally)) & enemy & info.pinned_diagonally;
+        auto pinned_west_capture = north(west(pawns & info.pinned_diagonally)) & enemy & info.pinned_diagonally;
 
         single_move  = single_move & targets;
         double_move  = double_move & targets;
@@ -119,8 +119,8 @@ BitBoard generic_attacks(PieceType piece, Square sq, BitBoard occ)
 
 void generate_piece_moves(MoveBuffer& buffer, Board& board, MoveGenerationInfo& info, PieceType piece, bool pinned)
 {
-        auto _pinned = info.hpinned | info.vpinned;
-        if (pinned) _pinned = (piece == Bishop) ? info.vpinned : info.hpinned;
+        auto _pinned = info.pinned_orthogonally | info.pinned_diagonally;
+        if (pinned) _pinned = (piece == Bishop) ? info.pinned_diagonally : info.pinned_orthogonally;
 
         auto occ    = board.occupied();
         auto pieces = board.extract_by_piece(piece);
@@ -154,16 +154,18 @@ void generate_piece_moves(MoveBuffer& buffer, Board& board, MoveGenerationInfo& 
 
 void generate_king_moves(MoveBuffer& buffer, Board& board, MoveGenerationInfo& info)
 {
-        BitBoard occ = board.occupied();
-        BitBoard attacks = KingAttacks[info.king] &~ (info.attacked | (board.our & occ));
+        auto attacks = KingAttacks[info.king] & info.targets;
+        attacks &= ~info.attacked;
 
         for (; bits(attacks)) {
                 auto dest = trailing_zeros(attacks);
                 buffer.push(M(info.king, dest, King));
         }
 
+        if (info.king != E1) return;
+
         auto castling = board.extract_by_piece(Castle)
-                & RookMagics[info.king].attacks(occ);
+                & RookMagics[info.king].attacks(board.occupied());
 
         // Special BitBoards to check castling against. The OCC BitBoards must not be occupied, and
         // the ATT BitBoards must not be attacked, as castling out-of, through or into check is not
@@ -223,11 +225,11 @@ BitBoard generate_movegen_info(Board& board, MoveGenerationInfo& info)
         for (; bits(rooks))    attacked |= RookMagics[trailing_zeros(rooks)].attacks(occ);
 
         info.attacked = attacked;
-        info.vpinned = 0;
-        info.hpinned = 0;
+        info.pinned_diagonally = 0;
+        info.pinned_orthogonally = 0;
 
-        for (; bits(bishop_pins)) info.vpinned |= LineBetween[info.king][trailing_zeros(bishop_pins)];
-        for (; bits(rook_pins))   info.hpinned |= LineBetween[info.king][trailing_zeros(rook_pins)];
+        for (; bits(bishop_pins)) info.pinned_diagonally |= LineBetween[info.king][trailing_zeros(bishop_pins)];
+        for (; bits(rook_pins))   info.pinned_orthogonally |= LineBetween[info.king][trailing_zeros(rook_pins)];
 
         return checks;
 }
@@ -245,15 +247,16 @@ MoveBuffer generate_moves(Board& board)
         buffer.pawn_pushes = 0; // This must be zeroed in case of an early exit and pawn moves aren't generated
 
         auto checks = generate_movegen_info(board, info);
+        generate_king_moves(buffer, board, info);
 
         // If we are in check from more than one piece, then we can only move king otherwise
         // we must block the check, or capture the checking piece
 
-        if (popcount(checks) == 2) goto king_moves;
+        if (popcount(checks) > 1) return buffer;
         if (checks) info.targets &= LineBetween[info.king][trailing_zeros(checks)];
 
         // Generate moves of pinned pieces, note: pinned Knights can never move
-        if ((info.hpinned | info.vpinned) & board.our) {
+        if ((info.pinned_orthogonally | info.pinned_diagonally) & board.our) {
                 generate_piece_moves(buffer, board, info, Rook,   true);
                 generate_piece_moves(buffer, board, info, Bishop, true);
         }
@@ -264,9 +267,6 @@ MoveBuffer generate_moves(Board& board)
         generate_piece_moves(buffer, board, info, Bishop, false);
         generate_piece_moves(buffer, board, info, Rook,   false);
         generate_piece_moves(buffer, board, info, Queen,  false);
-
-king_moves:
-        generate_king_moves(buffer, board, info);
         return buffer;
 }
 
@@ -357,12 +357,12 @@ uint64_t count_pawn_moves(Board& board, MoveGenerationInfo& info)
         auto candidates = pawns & south(east(en_passant) | west(en_passant));
 
         // We optimise this branch by only checking if the king is actually on the 5th rank
-        if ((info.king & 56) == 32 && popcount(candidates) == 1) {
-                BitBoard pinners = (board.extract_by_piece(Rook) | board.extract_by_piece(Queen)) &~ board.our;
-                BitBoard clear = candidates | south(en_passant);
+        if (info.king / 8 == 4 && popcount(candidates) == 1) {
+                auto pinners = (board.extract_by_piece(Rook) | board.extract_by_piece(Queen)) &~ board.our;
+                auto clear = candidates | south(en_passant);
 
                 // If the pawn is "double" pinned, then en-passant is no longer possible
-                if (RookMagics[info.king].attacks( (occ | en_passant) &~ clear) & pinners)
+                if (RookMagics[info.king].attacks(occ &~ clear) & pinners)
                         en_passant = 0;
         }
 
@@ -370,7 +370,7 @@ uint64_t count_pawn_moves(Board& board, MoveGenerationInfo& info)
         targets |= en_passant & north(info.targets);
         enemy   |= en_passant;
 
-        auto pinned = info.hpinned | info.vpinned;
+        auto pinned = info.pinned_orthogonally | info.pinned_diagonally;
         auto normal_pawns = pawns &~ pinned;
         auto pinned_pawns = pawns & pinned;
 
@@ -383,8 +383,8 @@ uint64_t count_pawn_moves(Board& board, MoveGenerationInfo& info)
         auto east_capture = north(east(normal_pawns)) & enemy;
         auto west_capture = north(west(normal_pawns)) & enemy;
 
-        auto pinned_east_capture = north(east(pawns & info.vpinned)) & enemy & info.vpinned;
-        auto pinned_west_capture = north(west(pawns & info.vpinned)) & enemy & info.vpinned;
+        auto pinned_east_capture = north(east(pawns & info.pinned_diagonally)) & enemy & info.pinned_diagonally;
+        auto pinned_west_capture = north(west(pawns & info.pinned_diagonally)) & enemy & info.pinned_diagonally;
 
         single_move  = single_move & targets;
         double_move  = double_move & targets;
@@ -407,8 +407,8 @@ uint64_t count_pawn_moves(Board& board, MoveGenerationInfo& info)
 
 uint64_t count_piece_moves(Board& board, MoveGenerationInfo& info, PieceType piece, bool pinned)
 {
-        auto _pinned = info.hpinned | info.vpinned;
-        if (pinned) _pinned = (piece == Bishop) ? info.vpinned : info.hpinned;
+        auto _pinned = info.pinned_orthogonally | info.pinned_diagonally;
+        if (pinned) _pinned = (piece == Bishop) ? info.pinned_diagonally : info.pinned_orthogonally;
 
         auto occ    = board.occupied();
         auto pieces = board.extract_by_piece(piece);
@@ -433,13 +433,14 @@ uint64_t count_piece_moves(Board& board, MoveGenerationInfo& info, PieceType pie
 
 uint64_t count_king_moves(Board& board, MoveGenerationInfo& info)
 {
-        BitBoard occ = board.occupied();
-        BitBoard attacks = KingAttacks[info.king] &~ (info.attacked | (board.our & occ));
+        auto attacks = KingAttacks[info.king] & info.targets;
+        attacks &= ~info.attacked;
 
         uint64_t count = popcount(attacks);
+        if (info.king != E1) return count;
 
         auto castling = board.extract_by_piece(Castle)
-                & RookMagics[info.king].attacks(occ);
+                & RookMagics[info.king].attacks(board.occupied());
 
         // Special BitBoards to check castling against. The OCC BitBoards must not be occupied, and
         // the ATT BitBoards must not be attacked, as castling out-of, through or into check is not
@@ -464,11 +465,11 @@ uint64_t count_moves(Board& board)
         // we must block the check, or capture the checking piece
         uint64_t count = count_king_moves(board, info);
 
-        if (popcount(checks) == 2) return count;
+        if (popcount(checks) > 1) return count;
         if (checks) info.targets &= LineBetween[info.king][trailing_zeros(checks)];
 
         // Generate moves of pinned pieces, note: pinned Knights can never move
-        if ((info.hpinned | info.vpinned) & board.our) {
+        if ((info.pinned_orthogonally | info.pinned_diagonally) & board.our) {
                 count += count_piece_moves(board, info, Rook,   true);
                 count += count_piece_moves(board, info, Bishop, true);
         }

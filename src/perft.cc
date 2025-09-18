@@ -75,7 +75,7 @@ const PerftTest PerftTests[] =
 constexpr size_t NumberOfPerftTests = sizeof(PerftTests) / sizeof (PerftTests[0]);
 
 
-Nodes perft(struct Board& pos, unsigned depth)
+Nodes perft(Board& pos, Depth depth)
 {
         if (depth == 1) return count_moves(pos);
         auto buffer = generate_moves(pos);
@@ -114,9 +114,9 @@ int main()
                 auto board = parse_fen(test.FEN, &white_to_move, &ok);
                 assert(ok && "FEN parsing failed!");
 
-                clock_t t1 = clock();
+                auto t1 = clock();
                 auto nodes = perft(board, test.depth);
-                clock_t t2 = clock();
+                auto t2 = clock();
 
                 total_nodes += nodes;
                 ticks += t2 - t1;
