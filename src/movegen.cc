@@ -1,4 +1,4 @@
-// FIXME: this file is an absolute disaster...
+// FIXME: this file is in need of more comments
 
 #include "bitboard.h"
 #include "board.h"
@@ -43,7 +43,7 @@ void generate_partial_pawn_moves(MoveBuffer& buffer, BitBoard moves, Square dire
 // in case of check this may be restricted), and a pinned mask which indicates pawns that are
 // pinned to our king.
 
-void generate_pawn_moves(MoveBuffer& buffer, Board& board, MoveGenerationInfo& info)
+void generate_pawn_moves(MoveBuffer& buffer, Board const& board, MoveGenerationInfo const& info)
 {
         auto pawns   = board.extract_by_piece(Pawn) & board.our;
         auto occ     = board.occupied();
@@ -117,32 +117,44 @@ BitBoard generic_attacks(PieceType piece, Square sq, BitBoard occ)
 }
 
 
-void generate_piece_moves(MoveBuffer& buffer, Board& board, MoveGenerationInfo& info, PieceType piece, bool pinned)
+void generate_piece_moves(MoveBuffer& buffer, Board const& board, MoveGenerationInfo const& info, PieceType piece)
 {
-        auto _pinned = info.pinned_orthogonally | info.pinned_diagonally;
-        if (pinned) _pinned = (piece == Bishop) ? info.pinned_diagonally : info.pinned_orthogonally;
-
-        auto occ    = board.occupied();
-        auto pieces = board.extract_by_piece(piece);
-        auto queens = board.extract_by_piece(Queen);
-        if (pinned) pieces |= queens;
-
-        pieces &= board.our & (pinned ? _pinned : ~_pinned);
+        auto pinned = info.pinned_diagonally | info.pinned_orthogonally;
+        auto pieces = board.extract_by_piece(piece) & board.our &~ pinned;
 
         for (; bits(pieces)) {
                 auto init = trailing_zeros(pieces);
-                auto attacks = generic_attacks(piece, init, occ) & info.targets;
-                auto p = piece;
-
-                // If the piece is pinned, then the moves must remain aligned to the king.
-                if (pinned) {
-                        attacks &= _pinned;
-                        if (queens & pieces & -pieces) p = Queen;
-                }
+                auto attacks = generic_attacks(piece, init, board.occupied()) & info.targets;
 
                 for (; bits(attacks)) {
                         Square dest = trailing_zeros(attacks);
-                        buffer.push(M(init, dest, p));
+                        buffer.push(M(init, dest, piece));
+                }
+        }
+}
+
+
+void generate_pinned_piece_moves(MoveBuffer& buffer, Board const& board, MoveGenerationInfo const& info, PieceType moves_like)
+{
+        auto pinned = (moves_like == Bishop) ? info.pinned_diagonally : info.pinned_orthogonally;
+
+        auto pieces = board.extract_by_piece(moves_like);
+        auto queens = board.extract_by_piece(Queen);
+
+        pieces |= queens;
+        pieces &= board.our & pinned;
+
+        for (; bits(pieces)) {
+                auto init = trailing_zeros(pieces);
+                auto attacks = generic_attacks(moves_like, init, board.occupied()) & info.targets;
+                auto actual_piece = moves_like;
+
+                attacks &= pinned;
+                if (queens & pieces & -pieces) actual_piece = Queen;
+
+                for (; bits(attacks)) {
+                        Square dest = trailing_zeros(attacks);
+                        buffer.push(M(init, dest, actual_piece));
                 }
         }
 }
@@ -152,7 +164,7 @@ void generate_piece_moves(MoveBuffer& buffer, Board& board, MoveGenerationInfo& 
 // exactly one king so the outer loop can be optimised away. Here we also clear the attacked mask
 // to prevent our king from walking into check.
 
-void generate_king_moves(MoveBuffer& buffer, Board& board, MoveGenerationInfo& info)
+void generate_king_moves(MoveBuffer& buffer, Board const& board, MoveGenerationInfo const& info)
 {
         auto attacks = KingAttacks[info.king] & info.targets;
         attacks &= ~info.attacked;
@@ -179,7 +191,7 @@ void generate_king_moves(MoveBuffer& buffer, Board& board, MoveGenerationInfo& i
 }
 
 
-BitBoard generate_movegen_info(Board& board, MoveGenerationInfo& info)
+BitBoard generate_movegen_info(Board const& board, MoveGenerationInfo& info)
 {
         // We cannot capture our own pieces!
         info.targets = ~(board.occupied() & board.our);
@@ -247,7 +259,7 @@ BitBoard generate_movegen_info(Board& board, MoveGenerationInfo& info)
 // Generate all legal moves for a given position. It is assumed that board itself is a legal
 // position, otherwise UB may occur (assumptions that we have a king may no longer be true).
 
-MoveBuffer generate_moves(Board& board)
+MoveBuffer generate_moves(Board const& board)
 {
         MoveBuffer buffer; // unitialised for performance
         MoveGenerationInfo info;
@@ -266,16 +278,16 @@ MoveBuffer generate_moves(Board& board)
 
         // Generate moves of pinned pieces, note: pinned Knights can never move
         if ((info.pinned_orthogonally | info.pinned_diagonally) & board.our) {
-                generate_piece_moves(buffer, board, info, Rook,   true);
-                generate_piece_moves(buffer, board, info, Bishop, true);
+                generate_pinned_piece_moves(buffer, board, info, Rook);
+                generate_pinned_piece_moves(buffer, board, info, Bishop);
         }
 
         // Generate regular moves for non-pinned pieces
         generate_pawn_moves (buffer, board, info);
-        generate_piece_moves(buffer, board, info, Knight, false);
-        generate_piece_moves(buffer, board, info, Bishop, false);
-        generate_piece_moves(buffer, board, info, Rook,   false);
-        generate_piece_moves(buffer, board, info, Queen,  false);
+        generate_piece_moves(buffer, board, info, Knight);
+        generate_piece_moves(buffer, board, info, Bishop);
+        generate_piece_moves(buffer, board, info, Rook);
+        generate_piece_moves(buffer, board, info, Queen);
         return buffer;
 }
 
@@ -351,7 +363,7 @@ Board make_pawn_push(Board board, Square dest)
  */
 
 
-uint64_t count_pawn_moves(Board& board, MoveGenerationInfo& info)
+uint64_t count_pawn_moves(Board const& board, MoveGenerationInfo const& info)
 {
         auto pawns   = board.extract_by_piece(Pawn) & board.our;
         auto occ     = board.occupied();
@@ -414,25 +426,16 @@ uint64_t count_pawn_moves(Board& board, MoveGenerationInfo& info)
 }
 
 
-uint64_t count_piece_moves(Board& board, MoveGenerationInfo& info, PieceType piece, bool pinned)
+uint64_t count_piece_moves(Board const& board, MoveGenerationInfo const& info, PieceType piece)
 {
-        auto _pinned = info.pinned_orthogonally | info.pinned_diagonally;
-        if (pinned) _pinned = (piece == Bishop) ? info.pinned_diagonally : info.pinned_orthogonally;
+        auto pinned = info.pinned_diagonally | info.pinned_orthogonally;
+        auto pieces = board.extract_by_piece(piece) & board.our &~ pinned;
 
-        auto occ    = board.occupied();
-        auto pieces = board.extract_by_piece(piece);
-        auto queens = board.extract_by_piece(Queen);
-        if (pinned) pieces |= queens;
-
-        pieces &= board.our & (pinned ? _pinned : ~_pinned);
         uint64_t count = 0;
 
         for (; bits(pieces)) {
                 auto init = trailing_zeros(pieces);
-                auto attacks = generic_attacks(piece, init, occ) & info.targets;
-
-                // If the piece is pinned, then the moves must remain aligned to the king.
-                if (pinned) attacks &= _pinned;
+                auto attacks = generic_attacks(piece, init, board.occupied()) & info.targets;
                 count += popcount(attacks);
         }
 
@@ -440,7 +443,31 @@ uint64_t count_piece_moves(Board& board, MoveGenerationInfo& info, PieceType pie
 }
 
 
-uint64_t count_king_moves(Board& board, MoveGenerationInfo& info)
+uint64_t count_pinned_piece_moves(Board const& board, MoveGenerationInfo const& info, PieceType moves_like)
+{
+        auto pinned = (moves_like == Bishop) ? info.pinned_diagonally : info.pinned_orthogonally;
+
+        auto pieces = board.extract_by_piece(moves_like);
+        auto queens = board.extract_by_piece(Queen);
+
+        pieces |= queens;
+        pieces &= board.our & pinned;
+
+        uint64_t count = 0;
+
+        for (; bits(pieces)) {
+                auto init = trailing_zeros(pieces);
+                auto attacks = generic_attacks(moves_like, init, board.occupied()) & info.targets;
+
+                attacks &= pinned;
+                count += popcount(attacks);
+        }
+
+        return count;
+}
+
+
+uint64_t count_king_moves(Board const& board, MoveGenerationInfo const& info)
 {
         auto attacks = KingAttacks[info.king] & info.targets;
         attacks &= ~info.attacked;
@@ -465,7 +492,7 @@ uint64_t count_king_moves(Board& board, MoveGenerationInfo& info)
 }
 
 
-uint64_t count_moves(Board& board)
+uint64_t count_moves(Board const& board)
 {
         MoveGenerationInfo info;
         auto checks = generate_movegen_info(board, info);
@@ -479,16 +506,16 @@ uint64_t count_moves(Board& board)
 
         // Generate moves of pinned pieces, note: pinned Knights can never move
         if ((info.pinned_orthogonally | info.pinned_diagonally) & board.our) {
-                count += count_piece_moves(board, info, Rook,   true);
-                count += count_piece_moves(board, info, Bishop, true);
+                count += count_pinned_piece_moves(board, info, Rook);
+                count += count_pinned_piece_moves(board, info, Bishop);
         }
 
         // Generate regular moves for non-pinned pieces
         count += count_pawn_moves (board, info);
-        count += count_piece_moves(board, info, Knight, false);
-        count += count_piece_moves(board, info, Bishop, false);
-        count += count_piece_moves(board, info, Rook,   false);
-        count += count_piece_moves(board, info, Queen,  false);
+        count += count_piece_moves(board, info, Knight);
+        count += count_piece_moves(board, info, Bishop);
+        count += count_piece_moves(board, info, Rook);
+        count += count_piece_moves(board, info, Queen);
 
         return count;
 }

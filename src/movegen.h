@@ -54,8 +54,8 @@ struct MoveBuffer {
 };
 
 
-MoveBuffer generate_moves(Board& board);
-uint64_t count_moves(Board& board); // used to make leaf counting faster
+MoveBuffer generate_moves(Board const& board);
+uint64_t count_moves(Board const& board); // used to make leaf counting faster
 
 Board make_move(Board board, Move move);
 Board make_pawn_push(Board board, Square dest);

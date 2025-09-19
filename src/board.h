@@ -38,10 +38,10 @@ struct Board {
         BitBoard x,y,z;
         BitBoard our;
 
-        BitBoard occupied()   { return x | y | z; }
-        BitBoard en_passant() { return our & ~occupied(); }
+        BitBoard occupied()   const { return x | y | z; }
+        BitBoard en_passant() const { return our & ~occupied(); }
 
-        BitBoard extract_by_piece(PieceType piece) {
+        BitBoard extract_by_piece(PieceType piece) const {
                 // First handle the special case of rooks as castles are still rooks for
                 // move generation and evaluation purposes.
                 if (piece == Rook) return z &~ y;

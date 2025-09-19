@@ -100,7 +100,7 @@ double get_time_from_os() {
 }
 
 
-Nodes perft(Board& pos, Depth depth)
+Nodes perft(Board const& pos, Depth depth)
 {
         if (depth == 1) return count_moves(pos);
         auto buffer = generate_moves(pos);
@@ -144,7 +144,7 @@ int start_perft_thread(void* opaque_thread_info)
 }
 
 
-void populate_position_pool(Board& board, Depth depth, Board position_pool[], size_t& position_pool_size)
+void populate_position_pool(Board const& board, Depth depth, Board position_pool[], size_t& position_pool_size)
 {
         if (depth == 0) {
                 position_pool[position_pool_size++] = board;
@@ -165,7 +165,7 @@ void populate_position_pool(Board& board, Depth depth, Board position_pool[], si
 }
 
 
-Nodes threaded_perft(Board& board, Depth depth, size_t number_of_threads)
+Nodes threaded_perft(Board const& board, Depth depth, size_t number_of_threads)
 {
         constexpr size_t MAX_THREAD_COUNT = 32;
         constexpr Depth POPULATION_DEPTH = 2;
@@ -228,7 +228,6 @@ int main()
 
                 auto expected = test.expected[test.depth - 1];
                 assert(nodes == expected && "TEST FAILED!");
-
                 auto seconds = t2 - t1;
                 printf("%-25s %-5u       %9zu\t\t(%6.3f Gnps)\n", test.name, test.depth, nodes, nodes / seconds / 1.0e9);
 
