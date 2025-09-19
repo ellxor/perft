@@ -8,7 +8,7 @@ constexpr size_t SlidingAttacksTableSize = 107648;
 
 BitBoard KnightAttacks[64+1];
 BitBoard KingAttacks[64];
-BitBoard SlidingAttacks[107648];
+BitBoard SlidingAttacks[SlidingAttacksTableSize];
 BitBoard LineBetween[64][64];
 
 Magic BishopMagics[64];
@@ -33,13 +33,13 @@ BitBoard generate_diagonal(DiagonalIndex index) {
 BitBoard generate_sliding_attacks(Square sq, BitBoard mask, BitBoard occ)
 {
         occ &= mask; // only use the occupancy of Squares we need
-        BitBoard bit = 1ull << sq;
+        auto bit = OneBB << sq;
 
-        BitBoard lower = occ & (bit - 1);
-        BitBoard upper = occ ^ lower;
+        auto lower = occ & (bit - 1);
+        auto upper = occ - lower;
 
-        lower = 0x8000000000000000u >> leading_zeros(lower | 1);   // isolate msb of lower bits...
-        return mask & ((upper ^ (upper - lower)) ^ bit); // ... and extract range up to lsb of upper bits
+        lower = (OneBB << 63) >> leading_zeros(lower | 1);   // isolate msb of lower bits...
+        return mask & (upper ^ (upper - lower)) &~ bit; // ... and extract range up to lsb of upper bits
 }
 
 
@@ -68,16 +68,16 @@ void init_bitboard_tables()
 {
         int index = 0;
 
-        for (Square sq = 0; sq < 64; sq += 1) {
+        for (Square sq = A1; sq <= H8; ++sq) {
                 auto bit = OneBB << sq;
 
                 KnightAttacks[sq] = north(north(east(bit))) | north(north(west(bit)))
-                                     | south(south(east(bit))) | south(south(west(bit)))
-                                     | east(east(north(bit)))  | east(east(south(bit)))
-                                     | west(west(north(bit)))  | west(west(south(bit)));
+                                  | south(south(east(bit))) | south(south(west(bit)))
+                                  | east(east(north(bit)))  | east(east(south(bit)))
+                                  | west(west(north(bit)))  | west(west(south(bit)));
 
                 KingAttacks[sq] = north(bit) | east(bit) | south(bit) | west(bit)
-                                   | north(east(bit)) | north(west(bit)) | south(east(bit)) | south(west(bit));
+                                | north(east(bit)) | north(west(bit)) | south(east(bit)) | south(west(bit));
 
 
                 // bishop attacks
@@ -101,7 +101,7 @@ void init_bitboard_tables()
 
                         do {
                                 SlidingAttacks[index++] = generate_sliding_attacks(sq, diag, occ)
-                                | generate_sliding_attacks(sq, anti, occ);
+                                                        | generate_sliding_attacks(sq, anti, occ);
                                 occ = (occ - mask) & mask; // iterate over all subset BitBoards of a BitBoard
                         }
                         while (occ);
@@ -127,7 +127,7 @@ void init_bitboard_tables()
 
                         do {
                                 SlidingAttacks[index++] = generate_sliding_attacks(sq, file, occ)
-                                | generate_sliding_attacks(sq, rank, occ);
+                                                        | generate_sliding_attacks(sq, rank, occ);
                                 occ = (occ - mask) & mask;
                         }
                         while (occ);

@@ -38,7 +38,7 @@ struct Board {
         BitBoard x,y,z;
         BitBoard our;
 
-        BitBoard occupied()   { return x | y | z; };
+        BitBoard occupied()   { return x | y | z; }
         BitBoard en_passant() { return our & ~occupied(); }
 
         BitBoard extract_by_piece(PieceType piece) {

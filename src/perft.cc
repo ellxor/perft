@@ -89,7 +89,7 @@ const PerftTest PerftTests[] =
         },
 };
 
-constexpr size_t NumberOfPerftTests = sizeof(PerftTests) / sizeof (PerftTests[0]);
+constexpr size_t NumberOfPerftTests = sizeof(PerftTests) / sizeof(PerftTests[0]);
 
 
 double get_time_from_os() {
@@ -209,7 +209,7 @@ int main()
         init_bitboard_tables();
 
         Seconds total_time = 0.0;
-        uint64_t total_nodes = 0;
+        Nodes total_nodes = 0;
 
         printf("name                      depth       nodes    \n");
         printf("===============================================\n");
@@ -236,5 +236,5 @@ int main()
                 total_time += seconds;
         }
 
-        printf("\nAverage nodes per second: %1.3f Gnps\n", total_nodes / total_time / 1.0e9);
+        printf("\nAverage nodes per second: %6.3f Gnps\n", total_nodes / total_time / 1.0e9);
 }
