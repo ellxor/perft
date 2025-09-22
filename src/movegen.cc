@@ -1,12 +1,20 @@
-// FIXME: this file is in need of more comments
-
 #include "bitboard.h"
 #include "board.h"
 #include "magic.h"
 #include "movegen.h"
 
+/*
+ *   Information that is passed around to move generation functions.
+ *   It stores (in order of definition):
+ *
+ *   - all squares attacked by enemy pieces to prevent illegal king walks
+ *   - all squares piece *must* move to, this is to block checks, or capture checking
+ *     pieces, etc...
+ *   - all squares that are pinned diagonally (see brackets below)
+ *   - all squares that are pinned orthogonally (not necessarily our or even occupied)
+ *   - square that our king is on
+ */
 
-// Some useful info to pass around to move generation
 struct MoveGenerationInfo {
         BitBoard attacked;
         BitBoard targets;
@@ -19,7 +27,7 @@ struct MoveGenerationInfo {
 // Generate pawn moves from a move mask, from a given direction. This allows us to
 // generate in more predictable loops.
 
-void generate_partial_pawn_moves(MoveBuffer& buffer, BitBoard moves, Square direction, bool promotion)
+void partially_generate_pawn_moves(MoveBuffer& buffer, BitBoard moves, Square direction, bool promotion)
 {
         while (moves) {
                 auto dest = trailing_zeros_and_pop(moves);
@@ -39,10 +47,6 @@ void generate_partial_pawn_moves(MoveBuffer& buffer, BitBoard moves, Square dire
 }
 
 
-// Generate pawn moves according to a targets mask (where pawns must end their move, for example
-// in case of check this may be restricted), and a pinned mask which indicates pawns that are
-// pinned to our king.
-
 void generate_pawn_moves(MoveBuffer& buffer, Board const& board, MoveGenerationInfo const& info)
 {
         auto pawns   = board.extract_by_piece(Pawn) & board.our;
@@ -50,14 +54,14 @@ void generate_pawn_moves(MoveBuffer& buffer, Board const& board, MoveGenerationI
         auto enemy   = occ &~ board.our;
         auto targets = info.targets;
 
-        // Check for pinned en-passant. Note that this is a special type of pinned piece as two
-        // pieces dissappear in the checking direction. This introduces a slow branch into our pawn
-        // move generation, but it is a necessary evil for full legality, however rare.
-
         auto en_passant = board.en_passant();
         auto candidates = pawns & south(east(en_passant) | west(en_passant));
 
-        // We optimise this branch by only checking if the king is actually on the 5th rank
+        // Check for pinned en-passant. Note that this is a special type of pinned piece as two
+        // pieces dissappear in the checking direction. This introduces a slow branch into our pawn
+        // move generation, but it is a necessary evil for full legality, however rare. We optimise this
+        // branch by only checking if the king is actually on the 5th rank.
+
         if (info.king / 8 == 4 && popcount(candidates) == 1) {
                 auto pinners = (board.extract_by_piece(Rook) | board.extract_by_piece(Queen)) &~ board.our;
                 auto clear = candidates | south(en_passant);
@@ -67,14 +71,15 @@ void generate_pawn_moves(MoveBuffer& buffer, Board const& board, MoveGenerationI
                         en_passant = 0;
         }
 
-        // enable en-passant if the pawn being captured was giving check
+        // Enable en-passant if the pawn being captured was giving check.
         targets |= en_passant & north(info.targets);
         enemy   |= en_passant;
 
         auto pinned = info.pinned_diagonally | info.pinned_orthogonally;
         auto unpinned_pawns = pawns &~ pinned;
 
-        auto file = file_of(info.king); // only pinned pawns on same file as king can move forward
+        // The only pinned pawns that can move foward are on same file as our king.
+        auto file = file_of(info.king);
         auto forward = unpinned_pawns | (pawns & info.pinned_orthogonally & file);
 
         auto single_move = north(forward) &~ occ;
@@ -83,6 +88,8 @@ void generate_pawn_moves(MoveBuffer& buffer, Board const& board, MoveGenerationI
         auto east_capture = north(east(unpinned_pawns)) & enemy;
         auto west_capture = north(west(unpinned_pawns)) & enemy;
 
+        // Again as with foward, we constrain pinned pawns capturing to staying diagonal to the king.
+        // This is a sufficient condition for legality.
         auto pinned_east_capture = north(east(pawns & info.pinned_diagonally)) & enemy & info.pinned_diagonally;
         auto pinned_west_capture = north(west(pawns & info.pinned_diagonally)) & enemy & info.pinned_diagonally;
 
@@ -93,13 +100,13 @@ void generate_pawn_moves(MoveBuffer& buffer, Board const& board, MoveGenerationI
 
         buffer.pawn_pushes = (single_move &~ Rank8BB) | double_move;
 
-        // promotions, note: double moves cannot promote
-        generate_partial_pawn_moves(buffer, single_move  & Rank8BB, North,   true);
-        generate_partial_pawn_moves(buffer, east_capture & Rank8BB, North+East, true);
-        generate_partial_pawn_moves(buffer, west_capture & Rank8BB, North+West, true);
+        // Handle promotions, note that double pawn moves cannot promote.
+        partially_generate_pawn_moves(buffer, single_move  & Rank8BB, North,   true);
+        partially_generate_pawn_moves(buffer, east_capture & Rank8BB, North+East, true);
+        partially_generate_pawn_moves(buffer, west_capture & Rank8BB, North+West, true);
 
-        generate_partial_pawn_moves(buffer, east_capture &~ Rank8BB, North+East, false);
-        generate_partial_pawn_moves(buffer, west_capture &~ Rank8BB, North+West, false);
+        partially_generate_pawn_moves(buffer, east_capture &~ Rank8BB, North+East, false);
+        partially_generate_pawn_moves(buffer, west_capture &~ Rank8BB, North+West, false);
 }
 
 
@@ -126,7 +133,7 @@ void generate_piece_moves(MoveBuffer& buffer, Board const& board, MoveGeneration
                 auto attacks = generic_attacks(piece, init, board.occupied()) & info.targets;
 
                 while (attacks) {
-                        Square dest = trailing_zeros_and_pop(attacks);
+                        auto dest = trailing_zeros_and_pop(attacks);
                         buffer.push(M(init, dest, piece));
                 }
         }
@@ -145,20 +152,21 @@ void generate_pinned_piece_moves(MoveBuffer& buffer, Board const& board, MoveGen
 
         while (pieces) {
                 auto init = trailing_zeros_and_pop(pieces);
+
+                // As with pinned pawns, as long as the moves stay on a square that is pinned, then it is
+                // enough to satisfy legality. Note that for this to hold orthogonal and diagonal pins are
+                // separated.
+
                 auto attacks = generic_attacks(moves_like, init, board.occupied()) & info.targets & pinned;
                 auto actual_piece = (queens & (OneBB << init)) ? Queen : moves_like;
 
                 while (attacks) {
-                        Square dest = trailing_zeros_and_pop(attacks);
+                        auto dest = trailing_zeros_and_pop(attacks);
                         buffer.push(M(init, dest, actual_piece));
                 }
         }
 }
 
-
-// Generate king moves. We use a specialised function rather than the one above as we always have
-// exactly one king so the outer loop can be optimised away. Here we also clear the attacked mask
-// to prevent our king from walking into check.
 
 void generate_king_moves(MoveBuffer& buffer, Board const& board, MoveGenerationInfo const& info)
 {
@@ -170,20 +178,22 @@ void generate_king_moves(MoveBuffer& buffer, Board const& board, MoveGenerationI
                 buffer.push(M(info.king, dest, King));
         }
 
+        // If our king is not on E1, it must have moved, so castling of any kind is no longer possible.
+        // So we safely can optimise with an early return.
         if (info.king != E1) return;
 
+        // Get a mask of rooks we can castle with, and that there are no occupied squares between our
+        // king and that rook.
         auto castling = board.extract_by_piece(Castle)
-                & RookMagics[info.king].attacks(board.occupied());
+                      & RookMagics[info.king].attacks(board.occupied());
 
-        // Special BitBoards to check castling against. The OCC BitBoards must not be occupied, and
-        // the ATT BitBoards must not be attacked, as castling out-of, through or into check is not
-        // allowed.
+        // We also then check that none of the squares between the king and the rook, including the
+        // king's square itself, are attacked. Note that castling our of check is illegal.
+        constexpr auto QueensideInbetween = (OneBB << C1 | OneBB << D1 | OneBB << E1);
+        constexpr auto KingsideInbetween = (OneBB << E1 | OneBB << F1 | OneBB << G1);
 
-        constexpr BitBoard QATT = (1 << C1 | 1 << D1 | 1 << E1);
-        constexpr BitBoard KATT = (1 << E1 | 1 << F1 | 1 << G1);
-
-        if (castling & (1 << A1) && !(info.attacked & QATT))  buffer.push(M_CASTLING(C1));
-        if (castling & (1 << H1) && !(info.attacked & KATT))  buffer.push(M_CASTLING(G1));
+        if (castling & (OneBB << A1) && !(QueensideInbetween & info.attacked)) buffer.push(M_CASTLING(C1));
+        if (castling & (OneBB << H1) && !(KingsideInbetween & info.attacked))  buffer.push(M_CASTLING(G1));
 }
 
 
@@ -192,6 +202,7 @@ BitBoard generate_movegen_info(Board const& board, MoveGenerationInfo& info)
         // We cannot capture our own pieces!
         info.targets = ~(board.occupied() & board.our);
 
+        // Get all enemy pieces
         auto pawns   = board.extract_by_piece(Pawn)   &~ board.our;
         auto knights = board.extract_by_piece(Knight) &~ board.our;
         auto bishops = board.extract_by_piece(Bishop) &~ board.our;
@@ -209,24 +220,27 @@ BitBoard generate_movegen_info(Board const& board, MoveGenerationInfo& info)
         auto our_king = board.extract_by_piece(King) & board.our;
         info.king = trailing_zeros(our_king);
 
-        auto occ = board.occupied() &~ our_king; // allows sliders to x-ray through our king
+        // For generating the enemy attacks, we allow sliding pieces (bishops,rook,queens)
+        // to move through our king. This prevents the king stepping back illegally along
+        // an attacked ray and accidentally block the check from where it previously was.
+        auto occ = board.occupied() &~ our_king;
         auto blockers = occ & board.our;
 
         auto king_diagonals = BishopMagics[info.king].attacks(occ);
         auto king_orthogonals = RookMagics[info.king].attacks(occ);
-        auto remove_blockers = occ &~ ((king_diagonals | king_orthogonals) & blockers);
 
-        // Simple non-sliding moves
-        attacked |= south(east(pawns) | west(pawns));
-        attacked |= KingAttacks[trailing_zeros(king)];
-
+        // Generate all pieces that are putting our king in check.
         checks |= pawns & north(east(our_king) | west(our_king));
         checks |= knights & KnightAttacks[trailing_zeros(our_king)];
         checks |= bishops & king_diagonals;
         checks |= rooks & king_orthogonals;
 
-        auto bishop_pins = bishops & BishopMagics[info.king].attacks(remove_blockers);
-        auto rook_pins = rooks & RookMagics[info.king].attacks(remove_blockers);
+        // Strip away the first line of our pieces that could potentially be blocking a check (i.e. pinned).
+        auto remove_blockers = occ &~ ((king_diagonals | king_orthogonals) & blockers);
+
+        // Generate attacks of simple non-sliding moves.
+        attacked |= south(east(pawns) | west(pawns));
+        attacked |= KingAttacks[trailing_zeros(king)];
 
         // Unroll knight loop to two iterations for performance.
         // Note if (knights == 0) then trailing zeros gives 64, and KnightAttacks[64] is the empty bitboard.
@@ -235,10 +249,19 @@ BitBoard generate_movegen_info(Board const& board, MoveGenerationInfo& info)
                 attacked |= KnightAttacks[trailing_zeros_and_pop(knights)];
         }
 
-        while (bishops)  attacked |= BishopMagics[trailing_zeros_and_pop(bishops)].attacks(occ);
-        while (rooks)    attacked |= RookMagics[trailing_zeros_and_pop(rooks)].attacks(occ);
+        // Get all bishops, rooks and queens that are x-raying our king. Note we calculate this before
+        // finding the attacked squares of these piece types below as that would destroy these bitboards.
+        auto bishop_pins = bishops & BishopMagics[info.king].attacks(remove_blockers);
+        auto rook_pins = rooks & RookMagics[info.king].attacks(remove_blockers);
+
+        while (bishops) attacked |= BishopMagics[trailing_zeros_and_pop(bishops)].attacks(occ);
+        while (rooks)   attacked |= RookMagics[trailing_zeros_and_pop(rooks)].attacks(occ);
 
         info.attacked = attacked;
+
+        // Generate pinned vectors by looping over all x-rays and generating the line between those pieces and
+        // our king. Note that this may include empty squares as well as enemy pieces, but we don't care as we
+        // only use these as masks when generating moves for our own pieces.
         info.pinned_diagonally = 0;
         info.pinned_orthogonally = 0;
 
@@ -257,30 +280,33 @@ MoveBuffer generate_moves(Board const& board)
         MoveBuffer buffer; // unitialised for performance
         MoveGenerationInfo info;
 
+        // Initialise buffer. Note that pawn_pushes must be zeroed in case of an early exit,
+        // caused by double check, and pawn moves aren't generated.
         buffer.size = 0;
-        buffer.pawn_pushes = 0; // This must be zeroed in case of an early exit and pawn moves aren't generated
+        buffer.pawn_pushes = 0;
 
         auto checks = generate_movegen_info(board, info);
         generate_king_moves(buffer, board, info);
 
         // If we are in check from more than one piece, then we can only move king otherwise
         // we must block the check, or capture the checking piece
-
         if (popcount(checks) > 1) return buffer;
         if (checks) info.targets &= LineBetween[info.king][trailing_zeros(checks)];
 
-        // Generate moves of pinned pieces, note: pinned Knights can never move
+        generate_pawn_moves(buffer, board, info);
+
+        // Generate regular moves for non-pinned pieces
+        generate_piece_moves(buffer, board, info, Knight);
+        generate_piece_moves(buffer, board, info, Bishop);
+        generate_piece_moves(buffer, board, info, Rook);
+        generate_piece_moves(buffer, board, info, Queen);
+
+        // Generate moves of pinned pieces, note: pinned knights can never move
         if ((info.pinned_orthogonally | info.pinned_diagonally) & board.our) {
                 generate_pinned_piece_moves(buffer, board, info, Bishop);
                 generate_pinned_piece_moves(buffer, board, info, Rook);
         }
 
-        // Generate regular moves for non-pinned pieces
-        generate_pawn_moves (buffer, board, info);
-        generate_piece_moves(buffer, board, info, Knight);
-        generate_piece_moves(buffer, board, info, Bishop);
-        generate_piece_moves(buffer, board, info, Rook);
-        generate_piece_moves(buffer, board, info, Queen);
         return buffer;
 }
 
@@ -347,6 +373,9 @@ Board make_move(Board board, Move move)
         return board;
 }
 
+// Specialised function for making a simple pawn push (non-promotion). Like with the
+// movebuffer, the tend to make up a lot of the legal moves in a position, so it's
+// good for performance to have a fast branch for such moves.
 
 Board make_pawn_push(Board board, Square dest)
 {
@@ -429,17 +458,13 @@ uint64_t count_pawn_moves(Board const& board, MoveGenerationInfo const& info)
         east_capture = (east_capture | pinned_east_capture) & targets;
         west_capture = (west_capture | pinned_west_capture) & targets;
 
-        uint64_t count = popcount( (single_move &~ Rank8BB) | double_move );
-
-        // promotions, note: double moves cannot promote
-        count += 4 * popcount(single_move  & Rank8BB);
-        count += 4 * popcount(east_capture & Rank8BB);
-        count += 4 * popcount(west_capture & Rank8BB);
-
-        count += popcount(east_capture &~ Rank8BB);
-        count += popcount(west_capture &~ Rank8BB);
-
-        return count;
+        return popcount( (single_move &~ Rank8BB) | double_move )
+             + popcount(east_capture &~ Rank8BB)
+             + popcount(west_capture &~ Rank8BB)
+             // Promotions count for 4 moves; knight, bishop, rook, queen.
+             + popcount(single_move  & Rank8BB) * 4
+             + popcount(east_capture & Rank8BB) * 4
+             + popcount(west_capture & Rank8BB) * 4;
 }
 
 
@@ -493,11 +518,7 @@ uint64_t count_king_moves(Board const& board, MoveGenerationInfo const& info)
         if (info.king != E1) return count;
 
         auto castling = board.extract_by_piece(Castle)
-                & RookMagics[info.king].attacks(board.occupied());
-
-        // Special BitBoards to check castling against. The OCC BitBoards must not be occupied, and
-        // the ATT BitBoards must not be attacked, as castling out-of, through or into check is not
-        // allowed.
+                      & RookMagics[info.king].attacks(board.occupied());
 
         constexpr BitBoard QATT = (1 << C1 | 1 << D1 | 1 << E1);
         constexpr BitBoard KATT = (1 << E1 | 1 << F1 | 1 << G1);
@@ -512,22 +533,18 @@ uint64_t count_king_moves(Board const& board, MoveGenerationInfo const& info)
 uint64_t count_moves(Board const& board)
 {
         MoveGenerationInfo info;
-        auto checks = generate_movegen_info(board, info);
 
-        // If we are in check from more than one piece, then we can only move king otherwise
-        // we must block the check, or capture the checking piece
+        auto checks = generate_movegen_info(board, info);
         uint64_t count = count_king_moves(board, info);
 
         if (popcount(checks) > 1) return count;
         if (checks) info.targets &= LineBetween[info.king][trailing_zeros(checks)];
 
-        // Generate moves of pinned pieces, note: pinned Knights can never move
         if ((info.pinned_orthogonally | info.pinned_diagonally) & board.our) {
                 count += count_pinned_piece_moves(board, info, Bishop);
                 count += count_pinned_piece_moves(board, info, Rook);
         }
 
-        // Generate regular moves for non-pinned pieces
         count += count_pawn_moves (board, info);
         count += count_piece_moves(board, info, Knight);
         count += count_piece_moves(board, info, Bishop);
