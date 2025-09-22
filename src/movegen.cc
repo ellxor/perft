@@ -520,11 +520,11 @@ uint64_t count_king_moves(Board const& board, MoveGenerationInfo const& info)
         auto castling = board.extract_by_piece(Castle)
                       & RookMagics[info.king].attacks(board.occupied());
 
-        constexpr BitBoard QATT = (1 << C1 | 1 << D1 | 1 << E1);
-        constexpr BitBoard KATT = (1 << E1 | 1 << F1 | 1 << G1);
+        constexpr auto QueensideInbetween = (OneBB << C1 | OneBB << D1 | OneBB << E1);
+        constexpr auto KingsideInbetween = (OneBB << E1 | OneBB << F1 | OneBB << G1);
 
-        if (castling & (1 << A1) && !(info.attacked & QATT))  ++count;
-        if (castling & (1 << H1) && !(info.attacked & KATT))  ++count;
+        if (castling & (OneBB << A1) && !(QueensideInbetween & info.attacked)) ++count;
+        if (castling & (OneBB << H1) && !(KingsideInbetween & info.attacked))  ++count;
 
         return count;
 }
