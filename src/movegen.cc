@@ -298,52 +298,55 @@ Board make_move(Board board, Move move)
         Square dest = M_DEST(move);
         PieceType piece = M_PIECE(move);
 
+        // We make sure to clear the destination square in case of a capture.
         auto clear = OneBB << init | OneBB << dest;
 
-        auto occ = board.occupied();
-        auto en_passant = board.our &~ occ;
-
-        // Remove captured en-passant pawn & castling rook
-        if (piece == Pawn)	clear |= south(en_passant & clear);
-        if (move & M_CASTLING_MASK) clear |= (dest < init) ? (1 << A1) : (1 << H1);
-
-        // Clear necessary bits and set piece on dest Square
-        board.x     &= ~clear;
-        board.y     &= ~clear;
-        board.z     &= ~clear;
-
-        auto mask = OneBB << dest;
-
-        board.our |= mask;
-        if (piece & 0b001) board.x |= mask;
-        if (piece & 0b010) board.y |= mask;
-        if (piece & 0b100) board.z |= mask;
-
-        if (move & M_CASTLING_MASK) {
-                auto castling_mask = OneBB << ((dest + init) / 2);
-                board.our |= castling_mask;
-
-                static_assert(Rook == 0b100, "required bit pattern");
-                board.z |= castling_mask;
+        // Remove captured en-passant pawn in piece moving is a pawn - only way it can
+        // get to the en-passant square is by capturing it.
+        if (piece == Pawn) {
+                clear |= south(board.en_passant() & clear);
         }
 
+        // After checking en-passant it is safe to find where enemy pieces will be after
+        // the move has been made.
+        auto enemy = board.occupied() &~ (board.our | clear);
+
+        // When the king moves for the first time, all castling is no longer allowed.
         if (piece == King) {
                 static_assert(Rook   == 0b100, "required bit pattern");
                 static_assert(Castle == 0b101, "required bit pattern");
 
-                // When the king moves for the first time, all castling is no longer allowed,
-                // so we toggle our Castles to Rooks by flipping the `x` bit.
+                // Toggle our Castles to Rooks by flipping the `x` bit.
                 board.x -= board.extract_by_piece(Castle) & Rank1BB;
         }
 
-        // Flip white BitBoard to black and update en-passant Square
-        BitBoard black = board.occupied() &~ board.our;
+        // Move rook that is being castled with in the case of castling.
+        if (move & M_CASTLING_MASK) {
+                static_assert(Rook == 0b100, "required bit pattern");
+
+                // Remove rook by adding it to the clear mask.
+                clear |= (dest < init) ? OneBB << A1 : OneBB << H1;
+
+                // And set it on the middle of the init and dest squares.
+                auto castling_mask = OneBB << ((dest + init) / 2);
+                board.z   |= castling_mask;
+        }
+
+        // Clear necessary bits
+        board.x &= ~clear;
+        board.y &= ~clear;
+        board.z &= ~clear;
+
+        // Move piece to the destination square
+        if (piece & 0b001) board.x |= OneBB << dest;
+        if (piece & 0b010) board.y |= OneBB << dest;
+        if (piece & 0b100) board.z |= OneBB << dest;
 
         // Rotate BitBoards to be from black's perspective
         board.x   = rotate(board.x);
         board.y   = rotate(board.y);
         board.z   = rotate(board.z);
-        board.our = rotate(black);
+        board.our = rotate(enemy);
 
         return board;
 }
@@ -351,22 +354,25 @@ Board make_move(Board board, Move move)
 
 Board make_pawn_push(Board board, Square dest)
 {
-        auto occ = board.occupied();
-        auto black = occ &~ board.our;
+        auto occupied = board.occupied();
+        auto enemy = occupied &~ board.our; // pawn push can never capture.
 
-        auto mask = OneBB << dest;
-        auto down = south(mask);
+        auto dest_bitboard = OneBB << dest;
+        auto init_bitboard = south(OneBB << dest);
 
-        // case of double pawn move
-        if (down &~ occ)  black |= down, down = south(down);
+        // Check if case of double pawn move.
+        if (init_bitboard &~ occupied) {
+                enemy |= init_bitboard; // set the en-passant flag
+                init_bitboard = south(init_bitboard);
+        }
 
-        mask |= down;
-        board.x ^= mask;
+        static_assert(Pawn == 0b001, "required bit pattern");
+        board.x ^= (dest_bitboard | init_bitboard); // toggle pawns
 
         board.x   = rotate(board.x);
         board.y   = rotate(board.y);
         board.z   = rotate(board.z);
-        board.our = rotate(black);
+        board.our = rotate(enemy);
 
         return board;
 }
