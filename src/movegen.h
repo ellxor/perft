@@ -1,4 +1,3 @@
-// FIXME: this file is a real mess
 #pragma once
 #include "bitboard.h"
 #include "board.h"
@@ -29,19 +28,18 @@ typedef uint16_t Move;
 
 /*
  *   The generated moves are stored in a fixed-size buffer for performance, reallocations would slow
- *   us down a lot. It is usually a large overallocation as chess has a branching factor of around
+ *   us down a lot. It is usually a large over-allocation as chess has a branching factor of around
  *   30-40, but some positions, although exceedingly rare, do require this many moves.
  *
  *   This position holds the record for the maximum number of possible legal moves at 218:
  *   FEN: 3Q4/1Q4Q1/4Q3/2Q4R/Q4Q2/3Q4/1Q4Rp/1K1BBNNk w - -
  *
- *   "Normal" pawn moves (single non-promotion or double moves) are stored in a bitboard to prevent
- *   them from being iterated over twice. As these make up a lot of moves in the position, this
- *   yields a significant performance gain.
+ *   Simple pawn pushes (not promotions but including double moves) are stored in a bitboard to
+ *   prevent them from being iterated over twice. As these make up a lot of moves in most positions,
+ *   this yields a significant performance gain.
  */
 
 constexpr size_t MaximumLegalMoves = 218;
-
 
 struct MoveBuffer {
         BitBoard pawn_pushes;
