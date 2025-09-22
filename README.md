@@ -26,6 +26,7 @@ Average nodes per second: 8.851 Gnps
 - Add some performance flags, e.g. `-O3 -flto -fno-exceptions -fno-rtti -march=native -Wl,-O1`.
 
 **PGO Build**
+
 For some extra performance, do a PGO (profile-guided-optimisation) build.
 - First compile adding `-fprofile-generate`.
 - Then run the binary `perft --bench`.
