@@ -1,6 +1,6 @@
 ### Perft
 
-| Note this only runs on x86 CPUs with the `pext` instruction (BMI2)
+> Note this only runs on x86 CPUs with the `pext` instruction (BMI2)
 
 This is a [perft](https://www.chessprogramming.org/Perft) program using a custom move generator and a unique board state
 using only 4 bitboards. It currently achieves an average of 1.40 billion nodes per second across
