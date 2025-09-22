@@ -10,8 +10,8 @@
 struct MoveGenerationInfo {
         BitBoard attacked;
         BitBoard targets;
-        BitBoard pinned_orthogonally;
         BitBoard pinned_diagonally;
+        BitBoard pinned_orthogonally;
         Square   king;
 };
 
@@ -275,8 +275,8 @@ MoveBuffer generate_moves(Board const& board)
 
         // Generate moves of pinned pieces, note: pinned Knights can never move
         if ((info.pinned_orthogonally | info.pinned_diagonally) & board.our) {
-                generate_pinned_piece_moves(buffer, board, info, Rook);
                 generate_pinned_piece_moves(buffer, board, info, Bishop);
+                generate_pinned_piece_moves(buffer, board, info, Rook);
         }
 
         // Generate regular moves for non-pinned pieces
@@ -503,8 +503,8 @@ uint64_t count_moves(Board const& board)
 
         // Generate moves of pinned pieces, note: pinned Knights can never move
         if ((info.pinned_orthogonally | info.pinned_diagonally) & board.our) {
-                count += count_pinned_piece_moves(board, info, Rook);
                 count += count_pinned_piece_moves(board, info, Bishop);
+                count += count_pinned_piece_moves(board, info, Rook);
         }
 
         // Generate regular moves for non-pinned pieces
