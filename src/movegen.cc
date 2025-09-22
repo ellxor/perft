@@ -229,13 +229,10 @@ BitBoard generate_movegen_info(Board const& board, MoveGenerationInfo& info)
         auto rook_pins = rooks & RookMagics[info.king].attacks(remove_blockers);
 
         // Unroll knight loop to two iterations for performance.
-        // As we force pext, we have bmi2 so tzcnt is guaranteed to give 64 on an argument input of zero.
+        // Note if (knights == 0) then trailing zeros gives 64, and KnightAttacks[64] is the empty bitboard.
         while (knights) {
-                attacked |= KnightAttacks[trailing_zeros(knights)];
-                knights &= knights - 1;
-
-                attacked |= KnightAttacks[trailing_zeros(knights)];
-                knights &= knights - 1;
+                attacked |= KnightAttacks[trailing_zeros_and_pop(knights)];
+                attacked |= KnightAttacks[trailing_zeros_and_pop(knights)];
         }
 
         while (bishops)  attacked |= BishopMagics[trailing_zeros_and_pop(bishops)].attacks(occ);
