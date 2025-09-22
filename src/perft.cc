@@ -1,6 +1,9 @@
+#include <atomic>
 #include <assert.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <threads.h>
 #include <unistd.h>
@@ -8,11 +11,8 @@
 #include "board.h"
 #include "magic.h"
 #include "movegen.h"
+#include "fen.cc" // Embed FEN parsing code
 
-// Embed FEN parsing code
-#include "fen.cc"
-
-#include <atomic>
 #define atomic(T) std::atomic<T>
 
 
@@ -100,6 +100,7 @@ double get_time_from_os() {
 }
 
 
+// Recursively compute perft result, requires depth >= 1!
 Nodes perft(Board const& pos, Depth depth)
 {
         if (depth == 1) return count_moves(pos);
@@ -167,7 +168,7 @@ void populate_position_pool(Board const& board, Depth depth, Board position_pool
 
 Nodes threaded_perft(Board const& board, Depth depth, size_t number_of_threads)
 {
-        constexpr size_t MAX_THREAD_COUNT = 32;
+        constexpr size_t MAX_THREAD_COUNT = 256;
         constexpr Depth POPULATION_DEPTH = 2;
 
         assert(depth > POPULATION_DEPTH);
@@ -201,12 +202,9 @@ Nodes threaded_perft(Board const& board, Depth depth, size_t number_of_threads)
 }
 
 
-int main()
+void bench()
 {
         auto cpu_core_count = sysconf(_SC_NPROCESSORS_ONLN);
-        printf("Running multi-threaded perft on %ld threads.\n", cpu_core_count);
-
-        init_bitboard_tables();
 
         Seconds total_time = 0.0;
         Nodes total_nodes = 0;
@@ -237,4 +235,68 @@ int main()
         }
 
         printf("\nAverage nodes per second: %6.3f Gnps\n", total_nodes / total_time / 1.0e9);
+}
+
+
+int main(int argc, char* argv[])
+{
+        init_bitboard_tables();
+
+        if (argc == 2 && strcmp(argv[1], "--bench") == 0) {
+                bench();
+                return 0;
+        }
+
+        if (argc != 3) {
+                fprintf(stderr,
+                        "Usage: %s <FEN> <depth>\n\n"
+                        " - FEN: position for perft test.\n"
+                        " - depth: non-negative depth of perft test.\n",
+                        argv[0]);
+                return 1;
+        }
+
+        bool white_to_move, ok;
+        auto board = parse_fen(argv[1], &white_to_move, &ok);
+
+        if (!ok) {
+                fprintf(stderr, "error: invalid fen.\n");
+                return 1;
+        }
+
+        // FIXME: check position is actually legal, not just parses correctly.
+
+        char* end_of_depth_string;
+        auto depth = strtol(argv[2], &end_of_depth_string, 10);
+
+        if (depth < 0 || *end_of_depth_string) {
+                fprintf(stderr, "error: invalid depth.\n");
+                return 1;
+        }
+
+        Nodes nodes;
+        auto t1 = get_time_from_os();
+
+        if (depth < 3) {
+                if (!depth) nodes = 1; // definition of perft 1
+                else        nodes = perft(board, depth);
+        }
+
+        else {
+                auto cpu_core_count = sysconf(_SC_NPROCESSORS_ONLN);
+                printf("Running multi-threaded perft on %ld threads.\n\n", cpu_core_count);
+
+                nodes = threaded_perft(board, depth, cpu_core_count);
+        }
+
+        auto t2 = get_time_from_os();
+
+        auto seconds = t2 - t1;
+        auto nodes_per_second = nodes / seconds;
+
+        printf("Result:            %lu\n", nodes);
+        printf("Time taken:        %.3f seconds.\n", t2 - t1);
+
+        if (nodes_per_second < 1.0e9) printf("Nodes per second:  %.0f million.\n", nodes_per_second / 1.0e6);
+        else                          printf("Nodes per second:  %.3f billion.\n", nodes_per_second / 1.0e9);
 }
