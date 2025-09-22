@@ -24,4 +24,10 @@ Average nodes per second: 8.851 Gnps
 - Only a C++ compiler is needed to build (`clang` seems to be slightly faster than `gcc`)
 - Compile the `src/unity_build.cc` file for a fast [unity build](https://en.wikipedia.org/wiki/Unity_build).
 - Add some performance flags, e.g. `-O3 -flto -fno-exceptions -fno-rtti -march=native -Wl,-O1`.
-- For some extra performance, do a PGO (profile-guided-optimisation) build using the `-fprofile-generate`/`-fprofile-use` flags and the command `llvm-profdata merge *.profraw -o default.profdata`.
+
+**PGO Build**
+For some extra performance, do a PGO (profile-guided-optimisation) build.
+- First compile adding `-fprofile-generate`.
+- Then run the binary `perft --bench`.
+- If using clang, run `llvm-profdata merge *.profraw -o default.profdata`, skip this step for GCC.
+- Then compile again adding `-fprofile-use`.
