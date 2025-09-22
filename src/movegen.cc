@@ -21,8 +21,8 @@ struct MoveGenerationInfo {
 
 void generate_partial_pawn_moves(MoveBuffer& buffer, BitBoard moves, Square direction, bool promotion)
 {
-        for (; bits(moves)) {
-                auto dest = trailing_zeros(moves);
+        while (moves) {
+                auto dest = trailing_zeros_and_pop(moves);
                 auto init = dest - direction;
 
                 if (promotion) {
@@ -122,12 +122,12 @@ void generate_piece_moves(MoveBuffer& buffer, Board const& board, MoveGeneration
         auto pinned = info.pinned_diagonally | info.pinned_orthogonally;
         auto pieces = board.extract_by_piece(piece) & board.our &~ pinned;
 
-        for (; bits(pieces)) {
-                auto init = trailing_zeros(pieces);
+        while (pieces) {
+                auto init = trailing_zeros_and_pop(pieces);
                 auto attacks = generic_attacks(piece, init, board.occupied()) & info.targets;
 
-                for (; bits(attacks)) {
-                        Square dest = trailing_zeros(attacks);
+                while (attacks) {
+                        Square dest = trailing_zeros_and_pop(attacks);
                         buffer.push(M(init, dest, piece));
                 }
         }
@@ -144,16 +144,13 @@ void generate_pinned_piece_moves(MoveBuffer& buffer, Board const& board, MoveGen
         pieces |= queens;
         pieces &= board.our & pinned;
 
-        for (; bits(pieces)) {
-                auto init = trailing_zeros(pieces);
-                auto attacks = generic_attacks(moves_like, init, board.occupied()) & info.targets;
-                auto actual_piece = moves_like;
+        while (pieces) {
+                auto init = trailing_zeros_and_pop(pieces);
+                auto attacks = generic_attacks(moves_like, init, board.occupied()) & info.targets & pinned;
+                auto actual_piece = (queens & (OneBB << init)) ? Queen : moves_like;
 
-                attacks &= pinned;
-                if (queens & pieces & -pieces) actual_piece = Queen;
-
-                for (; bits(attacks)) {
-                        Square dest = trailing_zeros(attacks);
+                while (attacks) {
+                        Square dest = trailing_zeros_and_pop(attacks);
                         buffer.push(M(init, dest, actual_piece));
                 }
         }
@@ -169,8 +166,8 @@ void generate_king_moves(MoveBuffer& buffer, Board const& board, MoveGenerationI
         auto attacks = KingAttacks[info.king] & info.targets;
         attacks &= ~info.attacked;
 
-        for (; bits(attacks)) {
-                auto dest = trailing_zeros(attacks);
+        while (attacks) {
+                auto dest = trailing_zeros_and_pop(attacks);
                 buffer.push(M(info.king, dest, King));
         }
 
@@ -235,22 +232,22 @@ BitBoard generate_movegen_info(Board const& board, MoveGenerationInfo& info)
         // Unroll knight loop to two iterations for performance.
         // As we force pext, we have bmi2 so tzcnt is guaranteed to give 64 on an argument input of zero.
         while (knights) {
-                attacked |= KnightAttacks[knights ? trailing_zeros(knights) : 64];
+                attacked |= KnightAttacks[trailing_zeros(knights)];
                 knights &= knights - 1;
 
-                attacked |= KnightAttacks[knights ? trailing_zeros(knights) : 64];
+                attacked |= KnightAttacks[trailing_zeros(knights)];
                 knights &= knights - 1;
         }
 
-        for (; bits(bishops))  attacked |= BishopMagics[trailing_zeros(bishops)].attacks(occ);
-        for (; bits(rooks))    attacked |= RookMagics[trailing_zeros(rooks)].attacks(occ);
+        while (bishops)  attacked |= BishopMagics[trailing_zeros_and_pop(bishops)].attacks(occ);
+        while (rooks)    attacked |= RookMagics[trailing_zeros_and_pop(rooks)].attacks(occ);
 
         info.attacked = attacked;
         info.pinned_diagonally = 0;
         info.pinned_orthogonally = 0;
 
-        for (; bits(bishop_pins)) info.pinned_diagonally |= LineBetween[info.king][trailing_zeros(bishop_pins)];
-        for (; bits(rook_pins))   info.pinned_orthogonally |= LineBetween[info.king][trailing_zeros(rook_pins)];
+        while (bishop_pins) info.pinned_diagonally |= LineBetween[info.king][trailing_zeros_and_pop(bishop_pins)];
+        while (rook_pins)   info.pinned_orthogonally |= LineBetween[info.king][trailing_zeros_and_pop(rook_pins)];
 
         return checks;
 }
@@ -433,8 +430,8 @@ uint64_t count_piece_moves(Board const& board, MoveGenerationInfo const& info, P
 
         uint64_t count = 0;
 
-        for (; bits(pieces)) {
-                auto init = trailing_zeros(pieces);
+        while (pieces) {
+                auto init = trailing_zeros_and_pop(pieces);
                 auto attacks = generic_attacks(piece, init, board.occupied()) & info.targets;
                 count += popcount(attacks);
         }
@@ -455,8 +452,8 @@ uint64_t count_pinned_piece_moves(Board const& board, MoveGenerationInfo const& 
 
         uint64_t count = 0;
 
-        for (; bits(pieces)) {
-                auto init = trailing_zeros(pieces);
+        while (pieces) {
+                auto init = trailing_zeros_and_pop(pieces);
                 auto attacks = generic_attacks(moves_like, init, board.occupied()) & info.targets;
 
                 attacks &= pinned;

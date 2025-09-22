@@ -33,13 +33,18 @@ inline BitBoard   west(BitBoard bb) { return bb >> East &~ FileHBB; }
 inline BitBoard rotate(BitBoard bb) { return __builtin_bswap64(bb); }
 
 
-inline Square trailing_zeros(BitBoard bb) {
-        return __builtin_ctzll(bb);
-}
-
 inline unsigned popcount(BitBoard bb) {
         return __builtin_popcountll(bb);
 }
 
 
-#define bits(mask) mask != 0; mask &= mask - 1
+inline Square trailing_zeros(BitBoard bb) {
+        return bb ? __builtin_ctzll(bb) : 64; // maps to tzcnt instruction
+}
+
+
+inline Square trailing_zeros_and_pop(BitBoard& bb) {
+        Square index = trailing_zeros(bb);
+        bb &= bb - 1;
+        return index;
+}

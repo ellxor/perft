@@ -112,8 +112,8 @@ Nodes perft(Board const& pos, Depth depth)
                 total += perft(child, depth - 1);
         }
 
-        for (; bits(buffer.pawn_pushes)) {
-                auto child = make_pawn_push(pos, trailing_zeros(buffer.pawn_pushes));
+        while (buffer.pawn_pushes) {
+                auto child = make_pawn_push(pos, trailing_zeros_and_pop(buffer.pawn_pushes));
                 total += perft(child, depth - 1);
         }
 
@@ -158,8 +158,8 @@ void populate_position_pool(Board const& board, Depth depth, Board position_pool
                 populate_position_pool(child, depth - 1, position_pool, position_pool_size);
         }
 
-        for (; bits(buffer.pawn_pushes)) {
-                auto child = make_pawn_push(board, trailing_zeros(buffer.pawn_pushes));
+        while (buffer.pawn_pushes) {
+                auto child = make_pawn_push(board, trailing_zeros_and_pop(buffer.pawn_pushes));
                 populate_position_pool(child, depth - 1, position_pool, position_pool_size);
         }
 }
@@ -226,13 +226,14 @@ int main()
                 auto nodes = threaded_perft(board, test.depth, cpu_core_count);
                 auto t2 = get_time_from_os();
 
-                auto expected = test.expected[test.depth - 1];
-                assert(nodes == expected && "TEST FAILED!");
                 auto seconds = t2 - t1;
                 printf("%-25s %-5u       %9zu\t\t(%6.3f Gnps)\n", test.name, test.depth, nodes, nodes / seconds / 1.0e9);
 
                 total_nodes += nodes;
                 total_time += seconds;
+
+                auto expected = test.expected[test.depth - 1];
+                assert(nodes == expected && "TEST FAILED!");
         }
 
         printf("\nAverage nodes per second: %6.3f Gnps\n", total_nodes / total_time / 1.0e9);
