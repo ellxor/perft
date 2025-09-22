@@ -51,10 +51,14 @@ struct Board parse_fen(const char *fen_string, bool *white_to_move, bool *ok)
 		else {
                         PieceType piece = piece_lookup[c | lower_mask];
                         if (piece == Empty) ERROR();
+                        auto mask = OneBB << sq;
 
-			/* Check if piece is black */
-			set_square(&board, sq, piece);
-                        if (c & lower_mask) board.our ^= OneBB << sq;
+                        if (piece & 0b001) board.x |= mask;
+                        if (piece & 0b010) board.y |= mask;
+                        if (piece & 0b100) board.z |= mask;
+
+                        /* Check if piece is black */
+                        if (!(c & lower_mask)) board.our |= mask;
 
 			sq += 1, file += 1;
 		}

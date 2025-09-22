@@ -56,18 +56,6 @@ struct Board {
 };
 
 
-// FIXME: this should be done better
-static inline void set_square(struct Board* board, Square dest, PieceType piece) {
-        BitBoard mask = OneBB << dest;
-
-        if (piece & 0b001) board->x |= mask;
-        if (piece & 0b010) board->y |= mask;
-        if (piece & 0b100) board->z |= mask;
-
-        board->our |= mask;
-}
-
-
 // For debugging purposes only...
 #include <stdio.h>
 

@@ -292,7 +292,6 @@ MoveBuffer generate_moves(Board const& board)
 // Make a legal move on the board state and update it. Note: like generate_moves, this function
 // also assumes that both board and move are legal.
 
-
 Board make_move(Board board, Move move)
 {
         Square init = M_INIT(move);
@@ -313,9 +312,29 @@ Board make_move(Board board, Move move)
         board.y     &= ~clear;
         board.z     &= ~clear;
 
-        set_square(&board, dest, piece);
-        if (move & M_CASTLING_MASK) set_square(&board, (dest + init) >> 1, Rook);
-        if (piece == King)	board.x ^= board.extract_by_piece(Castle) & Rank1BB; // remove castling rights
+        auto mask = OneBB << dest;
+
+        board.our |= mask;
+        if (piece & 0b001) board.x |= mask;
+        if (piece & 0b010) board.y |= mask;
+        if (piece & 0b100) board.z |= mask;
+
+        if (move & M_CASTLING_MASK) {
+                auto castling_mask = OneBB << ((dest + init) / 2);
+                board.our |= castling_mask;
+
+                static_assert(Rook == 0b100, "required bit pattern");
+                board.z |= castling_mask;
+        }
+
+        if (piece == King) {
+                static_assert(Rook   == 0b100, "required bit pattern");
+                static_assert(Castle == 0b101, "required bit pattern");
+
+                // When the king moves for the first time, all castling is no longer allowed,
+                // so we toggle our Castles to Rooks by flipping the `x` bit.
+                board.x -= board.extract_by_piece(Castle) & Rank1BB;
+        }
 
         // Flip white BitBoard to black and update en-passant Square
         BitBoard black = board.occupied() &~ board.our;
