@@ -71,18 +71,17 @@ void generate_pawn_moves(MoveBuffer& buffer, Board const& board, MoveGenerationI
         targets |= en_passant & north(info.targets);
         enemy   |= en_passant;
 
-        auto pinned = info.pinned_orthogonally | info.pinned_diagonally;
-        auto normal_pawns = pawns &~ pinned;
-        auto pinned_pawns = pawns & pinned;
+        auto pinned = info.pinned_diagonally | info.pinned_orthogonally;
+        auto unpinned_pawns = pawns &~ pinned;
 
         auto file = file_of(info.king); // only pinned pawns on same file as king can move forward
-        auto forward = normal_pawns | (pinned_pawns & file);
+        auto forward = unpinned_pawns | (pawns & info.pinned_orthogonally & file);
 
         auto single_move = north(forward) &~ occ;
         auto double_move = north(single_move & Rank3BB) &~ occ;
 
-        auto east_capture = north(east(normal_pawns)) & enemy;
-        auto west_capture = north(west(normal_pawns)) & enemy;
+        auto east_capture = north(east(unpinned_pawns)) & enemy;
+        auto west_capture = north(west(unpinned_pawns)) & enemy;
 
         auto pinned_east_capture = north(east(pawns & info.pinned_diagonally)) & enemy & info.pinned_diagonally;
         auto pinned_west_capture = north(west(pawns & info.pinned_diagonally)) & enemy & info.pinned_diagonally;
@@ -413,18 +412,17 @@ uint64_t count_pawn_moves(Board const& board, MoveGenerationInfo const& info)
         targets |= en_passant & north(info.targets);
         enemy   |= en_passant;
 
-        auto pinned = info.pinned_orthogonally | info.pinned_diagonally;
-        auto normal_pawns = pawns &~ pinned;
-        auto pinned_pawns = pawns & pinned;
+        auto pinned = info.pinned_diagonally | info.pinned_orthogonally;
+        auto unpinned_pawns = pawns &~ pinned;
 
         auto file = file_of(info.king); // only pinned pawns on same file as king can move forward
-        auto forward = normal_pawns | (pinned_pawns & file);
+        auto forward = unpinned_pawns | (pawns & info.pinned_orthogonally & file);
 
         auto single_move = north(forward) &~ occ;
         auto double_move = north(single_move & Rank3BB) &~ occ;
 
-        auto east_capture = north(east(normal_pawns)) & enemy;
-        auto west_capture = north(west(normal_pawns)) & enemy;
+        auto east_capture = north(east(unpinned_pawns)) & enemy;
+        auto west_capture = north(west(unpinned_pawns)) & enemy;
 
         auto pinned_east_capture = north(east(pawns & info.pinned_diagonally)) & enemy & info.pinned_diagonally;
         auto pinned_west_capture = north(west(pawns & info.pinned_diagonally)) & enemy & info.pinned_diagonally;
