@@ -3,9 +3,9 @@
 > Note this only runs on x86 CPUs with the `pext` instruction (BMI2)
 
 This is a [perft](https://www.chessprogramming.org/Perft) program using a custom move generator and a unique board state
-using only 4 bitboards. It currently achieves an average of 1.40 billion nodes per second across
-[a set of 6 positions](https://www.chessprogramming.org/Perft_Results) in single-threaded mode, and reaches up to 10.8
-billion nodes per second on Kiwipete on my 6 core (12 thread) 3.9 GHz machine.
+using only 4 bitboards. It currently achieves an average of 9 billion nodes per second across
+[a set of 6 positions](https://www.chessprogramming.org/Perft_Results), and reaches up to 11 billion nodes per second on
+Kiwipete on my 6 core 3.9 GHz machine.
 
 **Results:**
 ```
