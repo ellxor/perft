@@ -9,14 +9,14 @@ billion nodes per second on Kiwipete on my 6 core (12 thread) 3.9 GHz machine.
 
 **Results:**
 ```
-startpos         ( 5.800 Gnps)
-kiwipete         (10.817 Gnps)
-position 3       ( 4.860 Gnps)
-position 4       (10.014 Gnps)
-position 5       ( 9.363 Gnps)
-position 6       ( 9.452 Gnps)
+startpos         ( 5.817 Gnps)
+kiwipete         (11.107 Gnps)
+position 3       ( 4.987 Gnps)
+position 4       (10.183 Gnps)
+position 5       ( 9.544 Gnps)
+position 6       ( 9.701 Gnps)
 
-Average nodes per second: 8.851 Gnps
+Average nodes per second:  9.031 Gnps
 ```
 
 **Build Instructions**
